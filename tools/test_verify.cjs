@@ -60,8 +60,8 @@ async function buildPackage(tamper) {
   const kp = await AL.Crypto.ensureKeys();
   const jwk = await AL.Crypto.publicJwk();
   const journal = {
-    id: 'j1', title: 'Дом', address: 'Сочи, СНТ Восток, 27А', tenant: 'Воронкова Е. А.',
-    landlord: 'Омарова С. А.', deposit: 50000, rent: 80000, start: '2025-11-20', end: '2026-10-20'
+    id: 'j1', title: 'Дом', address: 'Город, улица, 1', tenant: 'Иванова М. П.',
+    landlord: 'Петров С. А.', deposit: 45000, rent: 65000, start: '2025-11-20', end: '2026-10-20'
   };
   const events = [];
   let prev = '';

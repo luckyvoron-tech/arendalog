@@ -7,7 +7,7 @@ import sys
 import json
 import zipfile
 
-SRC = r"C:\Users\user\Desktop\восток\arendalog"
+SRC = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BUILD = r"C:\arendabuild"
 TOOLS = r"C:\arendatools"
 JDK = os.path.join(TOOLS, "jdk")

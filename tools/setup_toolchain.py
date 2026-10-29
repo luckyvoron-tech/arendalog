@@ -6,7 +6,7 @@ import time
 import zipfile
 import urllib.request
 
-BASE = r"C:\Users\user\Desktop\восток\arendalog\tools"
+BASE = os.path.dirname(os.path.abspath(__file__))
 DL = os.path.join(BASE, "downloads")
 SDK = os.path.join(BASE, "sdk")
 os.makedirs(DL, exist_ok=True)

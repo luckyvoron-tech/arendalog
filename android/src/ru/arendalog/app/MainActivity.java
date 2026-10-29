@@ -16,6 +16,7 @@ import android.provider.MediaStore;
 import android.util.Base64;
 import android.view.View;
 import android.view.Window;
+import android.view.WindowInsets;
 import android.view.WindowManager;
 import android.webkit.JavascriptInterface;
 import android.webkit.ValueCallback;
@@ -61,6 +62,11 @@ public class MainActivity extends Activity {
         root.addView(webView, new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
         setContentView(root);
+
+        // Android 15 (targetSdk 35) принудительно рисует окно под системной строкой состояния,
+        // из-за чего часы и значки уведомлений наезжают на заголовок приложения.
+        // Добавляем отступы по вставкам системы — содержимое начинается ниже строки состояния.
+        applySystemBarInsets(root);
 
         WebSettings s = webView.getSettings();
         s.setJavaScriptEnabled(true);
@@ -146,6 +152,31 @@ public class MainActivity extends Activity {
         } else {
             webView.loadUrl(APP_URL);
         }
+    }
+
+    private void applySystemBarInsets(final FrameLayout root) {
+        if (Build.VERSION.SDK_INT >= 30) {
+            root.setOnApplyWindowInsetsListener(new View.OnApplyWindowInsetsListener() {
+                @Override
+                public WindowInsets onApplyWindowInsets(View v, WindowInsets insets) {
+                    android.graphics.Insets bars = insets.getInsets(
+                            WindowInsets.Type.systemBars() | WindowInsets.Type.displayCutout());
+                    v.setPadding(bars.left, bars.top, bars.right, bars.bottom);
+                    return insets;
+                }
+            });
+        } else {
+            root.setOnApplyWindowInsetsListener(new View.OnApplyWindowInsetsListener() {
+                @Override
+                @SuppressWarnings("deprecation")
+                public WindowInsets onApplyWindowInsets(View v, WindowInsets insets) {
+                    v.setPadding(insets.getSystemWindowInsetLeft(), insets.getSystemWindowInsetTop(),
+                            insets.getSystemWindowInsetRight(), insets.getSystemWindowInsetBottom());
+                    return insets;
+                }
+            });
+        }
+        root.requestApplyInsets();
     }
 
     private WebResourceResponse serveAsset(String path) {

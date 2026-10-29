@@ -75,7 +75,7 @@ const check = (n, c, extra) => {
   console.log('сервер поднят на ' + BASE);
 
   console.log('\n[1] Создание пространства');
-  const created = await api('POST', '/api/space', { title: 'Дом в Сочи', pubHex: 'abc123' });
+  const created = await api('POST', '/api/space', { title: 'Дом в посёлке', pubHex: 'abc123' });
   check('код 201', created.status === 201, created.txt);
   const spaceId = created.json && created.json.spaceId;
   const owner = created.json && created.json.token;

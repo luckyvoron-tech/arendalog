@@ -6,7 +6,7 @@ import sys
 import zipfile
 import tempfile
 
-APP = r"C:\Users\user\Desktop\восток\arendalog\app"
+APP = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'app')
 
 html = open(os.path.join(APP, "index.html"), encoding="utf-8").read()
 ids = set(re.findall(r'\bid="([^"]+)"', html))

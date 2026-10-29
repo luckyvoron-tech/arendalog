@@ -4,7 +4,7 @@
   const { U, DB } = global.AL;
 
   const REPO = 'luckyvoron-tech/arendalog';
-  const CURRENT = '1.0.0';
+  const CURRENT = '1.0.1';
   const CHECK_INTERVAL = 6 * 3600 * 1000; // не чаще раза в 6 часов
 
   const UPD = {

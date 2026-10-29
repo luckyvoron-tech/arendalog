@@ -5,7 +5,7 @@ import shutil
 import zipfile
 
 BASE = r"C:\arendatools"
-DL = r"C:\Users\user\Desktop\восток\arendalog\tools\downloads"
+DL = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'downloads')
 
 
 def log(m):

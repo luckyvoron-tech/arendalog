@@ -275,7 +275,7 @@ class CDP {
   await sleep(400);
   await cdp.eval(`(() => {
     const set = (s, v) => { const el = document.querySelector(s); if (el) { el.value = v; el.dispatchEvent(new Event('input', { bubbles: true })); } };
-    set('#pName', 'Воронкова Екатерина');
+    set('#pName', 'Иванова Мария');
     const sel = document.querySelector('#pRole'); sel.value = 'арендатор'; sel.dispatchEvent(new Event('change', { bubbles: true }));
     document.querySelector('#pSave').click();
     return true;
@@ -293,7 +293,7 @@ class CDP {
   check('в чек-листе 9 зон (8 + нетиповая)', roomsCustom === 9, roomsCustom);
   const hasMg = await cdp.eval('document.body.innerText.indexOf("Мангальная зона") >= 0');
   check('нетиповая зона в чек-листе', hasMg === true);
-  const hasPeople = await cdp.eval('document.querySelector("#modalBody").innerText.indexOf("Воронкова Екатерина") >= 0');
+  const hasPeople = await cdp.eval('document.querySelector("#modalBody").innerText.indexOf("Иванова Мария") >= 0');
   check('проживающие показаны в приёмке', hasPeople === true);
   await cdp.eval('document.querySelector("#modalClose").click()');
 

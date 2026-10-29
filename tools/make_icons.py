@@ -3,7 +3,8 @@
 import os
 from PIL import Image, ImageDraw, ImageFont
 
-OUT = r"C:\Users\user\Desktop\восток\arendalog\android\res"
+PROJECT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+OUT = os.path.join(PROJECT, 'android', 'res')
 DENS = {"mdpi": 48, "hdpi": 72, "xhdpi": 96, "xxhdpi": 144, "xxxhdpi": 192}
 SS = 4  # суперсэмплинг
 
@@ -79,5 +80,5 @@ for dens, size in DENS.items():
 
 # крупная версия для README
 big = make(512)
-big.save(r"C:\Users\user\Desktop\восток\arendalog\docs\icon-512.png")
+big.save(os.path.join(PROJECT, 'docs', 'icon-512.png'))
 print("docs/icon-512.png")

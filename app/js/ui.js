@@ -1251,7 +1251,7 @@
     const wrap = el('div');
     wrap.innerHTML = `
       <label>Имя
-        <input id="pName" value="${U.esc(p.name)}" placeholder="Воронкова Екатерина">
+        <input id="pName" value="${U.esc(p.name)}" placeholder="Иванова Мария">
       </label>
       <label>Роль в проживании
         <select id="pRole">${ROLES.map(r => `<option ${r === p.role ? 'selected' : ''}>${r}</option>`).join('')}</select>

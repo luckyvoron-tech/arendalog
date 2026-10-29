@@ -297,6 +297,31 @@ class CDP {
   check('проживающие показаны в приёмке', hasPeople === true);
   await cdp.eval('document.querySelector("#modalClose").click()');
 
+  console.log('\n[12] Автообновление');
+  const cmp = await cdp.eval(`JSON.stringify({
+    newer: Update.isNewer('1.0.1','1.0.0'),
+    same: Update.isNewer('1.0.0','1.0.0'),
+    older: Update.isNewer('0.9.9','1.0.0'),
+    vprefix: Update.isNewer('v2.0','1.0.0'),
+    multi: Update.isNewer('1.2.10','1.2.9')
+  })`);
+  const c = JSON.parse(cmp);
+  check('новая версия определяется', c.newer === true);
+  check('та же версия не считается новой', c.same === false);
+  check('старая версия не считается новой', c.older === false);
+  check('префикс v учитывается', c.vprefix === true);
+  check('сравнение по числам, а не строкам', c.multi === true, cmp);
+
+  const banner = await cdp.eval(`(() => {
+    Update.render({ version: '9.9.9', url: 'https://example.com/ArendaLog.apk' });
+    const b = document.getElementById('updateBox');
+    return JSON.stringify({ shown: b.className.indexOf('hide') < 0, text: b.innerText, html: b.innerHTML });
+  })()`);
+  const bn = JSON.parse(banner);
+  check('баннер обновления отрисован', bn.shown === true, banner);
+  check('в баннере версия', /9\.9\.9/.test(bn.text || ''), bn.text);
+  check('в баннере ссылка на APK', /ArendaLog\.apk/.test(bn.html || ''), bn.html);
+
   console.log('\n════════════════════════');
   console.log('Пройдено: ' + pass + ' · Провалено: ' + fail);
   try { ws.close(); } catch (e) { }

@@ -27,7 +27,6 @@
 
       UI.init();
       await UI.requirePin();
-      if (global.Sync) { try { await global.Sync.load(); } catch (e) { } }
       await UI.loadAll();
       UI.renderHandovers();
       UI.showTab('home');

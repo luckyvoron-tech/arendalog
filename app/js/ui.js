@@ -76,7 +76,6 @@
     photos: {},
     photoUrl: {},
     filter: 'all',
-    readOnly: false,
     tsaUrl: 'https://freetsa.org/tsr',
     pendingPhotos: []
   };
@@ -126,7 +125,6 @@
 
   /* ─────────────── Загрузка состояния ─────────────── */
   async function loadAll() {
-    state.readOnly = !!(await DB.getSet('readOnly', false));
     state.tsaUrl = (await DB.getSet('tsaUrl', 'https://freetsa.org/tsr')) || 'https://freetsa.org/tsr';
     let jid = await DB.getSet('activeJournal', null);
     let journals = await DB.all('journals');
@@ -178,7 +176,6 @@
     const j = state.journal;
     $('#objTitle').textContent = j.title || 'АрендаЛог';
     $('#objSub').textContent = j.address || 'журнал аренды и доказательства';
-    $('#btnLock').style.display = state.readOnly ? 'none' : '';
   }
 
   /* ─────────────── Журнал ─────────────── */
@@ -250,21 +247,19 @@
       </div>
       ${photos.length ? `<div class="card"><div class="photo-grid">${photos.map(u => `<div class="photo-cell"><img src="${u}"></div>`).join('')}</div></div>` : ''}
     `;
-    if (!state.readOnly) {
-      myAuthorId().then(myId => {
-        if (ev.authorId && ev.authorId !== myId) return; // чужие записи не удаляем
-        const del = el('button', { class: 'btn danger' }, 'Удалить событие');
-        del.addEventListener('click', async () => {
-          if (!confirm('Удалить событие? Цепочка будет перестроена, а прежний корневой хеш станет недействительным.')) return;
-          await DB.del('events', ev.id);
-          closeModal();
-          await rebuildChain();
-          await loadAll();
-          toast('Событие удалено');
-        });
-        wrap.appendChild(del);
+    myAuthorId().then(myId => {
+      if (ev.authorId && ev.authorId !== myId) return; // чужие записи не удаляем
+      const del = el('button', { class: 'btn danger' }, 'Удалить событие');
+      del.addEventListener('click', async () => {
+        if (!confirm('Удалить событие? Цепочка будет перестроена, а прежний корневой хеш станет недействительным.')) return;
+        await DB.del('events', ev.id);
+        closeModal();
+        await rebuildChain();
+        await loadAll();
+        toast('Событие удалено');
       });
-    }
+      wrap.appendChild(del);
+    });
     openModal(TYPES[ev.type].label + ' · ' + U.fmtDateTime(ev.tsDevice), wrap);
   }
 
@@ -326,9 +321,6 @@
   /* сохранение журнала + отправка метаданных на сервер, если подключено */
   async function saveJournal() {
     await DB.put('journals', state.journal);
-    if (global.Sync && global.Sync.connected() && global.Sync.cfg.role !== 'read') {
-      global.Sync.pushMeta().catch(() => {});
-    }
   }
   function baseForHash(ev) {
     const base = {
@@ -363,7 +355,6 @@
       ev.hash = h;
       ev.sig = await Crypto.signHex(h);
       ev.tsa = null;
-      ev.synced = false;
       prev = h;
       await DB.put('events', ev);
     }
@@ -371,7 +362,6 @@
 
   /* ─────────────── Добавление события ─────────────── */
   function addEventForm(type) {
-    if (state.readOnly) { toast('Режим просмотра: редактирование запрещено'); return; }
     type = type || 'defect';
     const wrap = el('div');
     state.pendingPhotos = [];
@@ -565,9 +555,6 @@
 
     // метка времени — не блокируем сохранение
     stampEvent(ev).catch(() => {});
-    if (global.Sync && global.Sync.connected() && global.Sync.cfg.role !== 'read') {
-      global.Sync.push().catch(() => {});
-    }
     return ev;
   }
 
@@ -606,7 +593,6 @@
 
   /* ─────────────── Приёмка / сдача ─────────────── */
   function startHandover(kind) {
-    if (state.readOnly) { toast('Режим просмотра'); return; }
     const wrap = el('div');
     const zonesUsed = (state.journal.zones && state.journal.zones.length)
       ? state.journal.zones
@@ -807,7 +793,6 @@
     const kp = await Crypto.ensureKeys();
     $('#keyInfo').textContent = kp.pubHex.slice(0, 16) + '…';
     $('#chainInfo').textContent = res.ok ? 'цела · ' + state.events.length + ' событий' : 'нарушена';
-    $('#roInfo').textContent = state.readOnly ? 'включён' : 'выключен';
     $('#fTsa').value = state.tsaUrl;
   }
 
@@ -815,6 +800,9 @@
     opts = opts || {};
     const j = state.journal;
     const evs = state.events.slice().sort((a, b) => a.seq - b.seq);
+    /* если журнал начат не с первого дня аренды — в отчёте это должно быть видно */
+    const startedLater = !!(j.start && evs.length &&
+      new Date(evs[0].tsDevice) > new Date(new Date(j.start).getTime() + 86400000));
     const photos = state.photos;
     const rows = evs.map(ev => {
       const t = TYPES[ev.type] || TYPES.note;
@@ -900,6 +888,8 @@
       <div><b>Период аренды:</b> ${U.fmtDate(j.start)} — ${U.fmtDate(j.end)} ${j.rent ? '· плата ' + U.money(j.rent) + '/мес' : ''} ${j.deposit ? '· залог ' + U.money(j.deposit) : ''}</div>
       <div><b>Сформировано:</b> ${U.fmtDateTime(U.nowISO())}</div>
       <div><b>Событий:</b> ${evs.length} · подтверждено временем: ${evs.filter(e => e.tsa).length}</div>
+      ${evs.length ? `<div><b>Записи ведутся с:</b> ${U.fmtDateTime(evs[0].tsDevice)}${startedLater ? ' — за более ранний период записей нет' : ''}</div>` : ''}
+      ${(j.contract || []).length ? `<div><b>Договор аренды:</b> ${j.contract.length} стр. · копии в папке contract/</div>` : ''}
     </div>
 
     <h2>Зафиксированные события</h2>
@@ -1034,6 +1024,7 @@
           kind: p.kind || 'photo', name: p.name || null, file: nameFor(p)
         } : null;
       })).filter(Boolean),
+      contract: (j.contract || []).map(pid => { const p = state.photos[pid]; return p ? { id: p.id, kind: p.kind || 'photo', name: p.name || null, sha256: p.sha256 } : null; }).filter(Boolean),
       integrity: { rootHash: manifest.rootHash, keyFingerprint: kp.pubHex, algorithm: 'SHA-256 + ECDSA P-256', timestamps: 'RFC 3161' }
     };
     const dataBytes = new TextEncoder().encode(JSON.stringify(data, null, 2));
@@ -1055,6 +1046,19 @@
         files.push({ name, bytes });
         manifest.files.push({ name, sha256: await U.sha256Hex(bytes) });
       }
+    }
+
+    // договор аренды — отдельной папкой пакета
+    for (const pid of (j.contract || [])) {
+      const p = state.photos[pid];
+      if (!p) continue;
+      const bytes = new Uint8Array(await p.blob.arrayBuffer());
+      const base = p.kind === 'doc'
+        ? String(p.name || ('договор-' + p.id)).replace(/[^\w.\-]+/g, '_').slice(-60)
+        : p.id + '.jpg';
+      const name = 'contract/' + base;
+      files.push({ name, bytes });
+      manifest.files.push({ name, sha256: await U.sha256Hex(bytes) });
     }
 
     const readme = `ПАКЕТ ДОКАЗАТЕЛЬСТВ «АРЕНДАЛОГ»
@@ -1177,7 +1181,6 @@
             mime: p.mime, sha256: p.sha256, ts: U.nowISO()
           });
         }
-        if (pack.kind === 'invite') await DB.set('readOnly', true);
         await loadAll();
         showTab('home');
         toast(pack.kind === 'invite' ? 'Открыт журнал в режиме просмотра' : 'Журнал восстановлен');
@@ -1208,7 +1211,6 @@
   }
 
   function editZone(id) {
-    if (state.readOnly) { toast('Режим просмотра'); return; }
     const zones = state.journal.zones || [];
     const existing = id ? zones.find(z => z.id === id) : null;
     const z = existing || { id: U.uid(), name: '', note: '', items: [] };
@@ -1257,7 +1259,6 @@
   }
 
   function zoneTemplates() {
-    if (state.readOnly) { toast('Режим просмотра'); return; }
     const wrap = el('div');
     wrap.innerHTML =
       Object.keys(ZONE_TEMPLATES).map(k => {
@@ -1297,7 +1298,6 @@
   }
 
   function editPerson(id) {
-    if (state.readOnly) { toast('Режим просмотра'); return; }
     const people = state.journal.people || [];
     const existing = id ? people.find(p => p.id === id) : null;
     const p = existing || { id: U.uid(), name: '', role: 'арендатор' };
@@ -1465,6 +1465,112 @@
     });
   }
 
+  /* ─────────────── Договор аренды ─────────────── */
+  function contractIds() { return state.journal.contract || []; }
+
+  function renderContract() {
+    const box = $('#contractList');
+    if (!box) return;
+    const ids = contractIds();
+    box.innerHTML = '';
+    if (!ids.length) {
+      box.appendChild(el('div', { class: 'muted small' },
+        'Договор пока не добавлен. Сфотографируйте страницы — они будут всегда под рукой, даже без интернета.'));
+      return;
+    }
+    const grid = el('div', { class: 'photo-grid' });
+    ids.forEach(pid => {
+      const p = state.photos[pid];
+      if (!p) return;
+      const isDoc = p.kind === 'doc';
+      const cell = el('div', { class: 'photo-cell', style: 'position:relative' });
+      cell.innerHTML = isDoc
+        ? '<div style="display:flex;align-items:center;justify-content:center;height:100%;font-size:11px;text-align:center;padding:6px;background:#12161c">📎<br>' +
+          U.esc((p.name || 'файл').slice(0, 18)) + '</div><button class="del">✕</button>'
+        : '<img src="' + (state.photoUrl[pid] || '') + '" alt=""><button class="del">✕</button>';
+      cell.addEventListener('click', () => openDoc(pid));
+      const del = cell.querySelector('.del');
+      del.addEventListener('click', async e => {
+        e.stopPropagation();
+        if (!confirm('Убрать страницу договора?')) return;
+        state.journal.contract = contractIds().filter(x => x !== pid);
+        await saveJournal();
+        try { await DB.del('photos', pid); } catch (e2) { }
+        await loadAll();
+        toast('Убрано');
+      });
+      grid.appendChild(cell);
+    });
+    box.appendChild(grid);
+  }
+
+  async function addContractDocs(useCamera) {
+    const input = el('input', {
+      type: 'file',
+      accept: useCamera ? 'image/*' : 'image/*,application/pdf',
+      multiple: 'multiple'
+    });
+    if (useCamera) input.setAttribute('capture', 'environment');
+    input.style.display = 'none';
+    document.body.appendChild(input);
+    input.addEventListener('change', async () => {
+      let added = 0;
+      for (const file of Array.from(input.files || [])) {
+        try {
+          let blob = file, w = 0, h = 0, kind = 'doc';
+          let mime = file.type || 'application/octet-stream';
+          if (/^image\//.test(file.type)) {
+            const r = await global.AL.compressImage(file, 1800);
+            blob = r.blob; w = r.w; h = r.h; mime = 'image/jpeg'; kind = 'photo';
+          }
+          const pid = U.uid();
+          const sha = await U.sha256Hex(await blob.arrayBuffer());
+          await DB.put('photos', {
+            id: pid, journalId: state.journal.id, eventId: null,
+            blob: blob, mime: mime, w: w, h: h, sha256: sha,
+            ts: U.nowISO(), kind: kind, name: file.name || null
+          });
+          state.journal.contract = contractIds().concat([pid]);
+          added++;
+        } catch (e) { toast('Не удалось добавить файл'); }
+      }
+      input.remove();
+      if (added) {
+        await saveJournal();
+        await loadAll();
+        toast('Добавлено страниц: ' + added);
+      }
+    });
+    input.click();
+  }
+
+  async function openDoc(pid) {
+    const p = state.photos[pid];
+    if (!p) return;
+    const isDoc = p.kind === 'doc';
+    const wrap = el('div');
+    wrap.innerHTML = isDoc
+      ? '<div class="card"><b>' + U.esc(p.name || 'документ') + '</b>' +
+        '<div class="muted small" style="margin-top:6px">' + Math.round(p.blob.size / 1024) + ' КБ</div></div>'
+      : '<div class="card"><img src="' + (state.photoUrl[pid] || '') + '" style="width:100%;border-radius:10px" alt=""></div>';
+    const save = el('button', { class: 'btn primary' }, 'Сохранить в телефон');
+    save.addEventListener('click', async () => {
+      save.disabled = true;
+      try {
+        const b64 = await blobToB64(p.blob);
+        const ext = (isDoc && p.name && p.name.indexOf('.') > 0) ? p.name.split('.').pop() : 'jpg';
+        const nm = 'Договор-' + U.fmtDate(U.nowISO()).replace(/\./g, '-') + '-' + pid.slice(0, 4) + '.' + ext;
+        const r = await Bridge.saveFile(nm, b64, p.mime || 'image/jpeg');
+        toast(r.ok ? 'Сохранено: ' + (r.path || 'в загрузки') : 'Ошибка: ' + r.error);
+      } catch (e) { toast('Не удалось сохранить'); }
+      save.disabled = false;
+    });
+    wrap.appendChild(save);
+    wrap.appendChild(el('p', { class: 'muted small' },
+      'Файл попадёт в «Загрузки» — оттуда его можно отправить кому угодно: почтой, в мессенджере или через облако.'));
+    openModal(isDoc ? 'Документ' : 'Страница договора', wrap);
+  }
+
   function renderObject() {
     const j = state.journal;
     $('#fTitle').value = j.title || '';
@@ -1478,6 +1584,7 @@
     $('#fEnd').value = j.end || '';
     renderZones();
     renderPeople();
+    renderContract();
   }
 
   function renderDeadlines() {
@@ -1487,10 +1594,15 @@
     if (j.end) {
       const end = new Date(j.end);
       const days = Math.ceil((end - Date.now()) / 86400000);
-      items.push([`Окончание договора: ${U.fmtDate(j.end)}`, days > 0 ? `через ${days} дн.` : 'истёк']);
+      items.push([`Окончание договора: ${U.fmtDate(j.end)}`,
+        days > 0 ? `через ${days} дн.` : (days === 0 ? 'сегодня' : `${-days} дн. назад`)]);
     }
     if (j.deposit) items.push(['Залог к возврату', U.money(j.deposit)]);
     items.push(['Событий в журнале', String(state.events.length)]);
+    if (state.events.length) {
+      const first = state.events.slice().sort((a, b) => (a.tsDevice > b.tsDevice ? 1 : -1))[0];
+      items.push(['Записи ведутся с', U.fmtDate(first.tsDevice)]);
+    }
     items.push(['Приёмок и сдач', String(state.handovers.length)]);
     box.innerHTML = items.map(([k, v]) => `<div class="kv"><span>${U.esc(k)}</span><b>${U.esc(v)}</b></div>`).join('');
   }
@@ -1575,24 +1687,13 @@
         if (b) startHandover(b.dataset.hv);
       });
 
+      $('#btnContractPhoto').addEventListener('click', () => addContractDocs(true));
+      $('#btnContractFile').addEventListener('click', () => addContractDocs(false));
       $('#btnAddZone').addEventListener('click', () => editZone(null));
       $('#btnZoneTpl').addEventListener('click', zoneTemplates);
       $('#btnAddPerson').addEventListener('click', () => editPerson(null));
-
-      if (global.Sync) {
-        $('#btnSpaceCreate').addEventListener('click', () => global.Sync.createSpace());
-        $('#btnJoin').addEventListener('click', () => global.Sync.join());
-        $('#btnSyncNow').addEventListener('click', () => global.Sync.syncNow());
-        $('#btnLive').addEventListener('click', () => {
-          if (global.Sync.live) global.Sync.stopLive(); else global.Sync.startLive();
-        });
-        $('#btnInvite2').addEventListener('click', () => global.Sync.invite('read'));
-        $('#btnInviteCo').addEventListener('click', () => global.Sync.invite('write'));
-      }
-
       $('#objForm').addEventListener('submit', async e => {
         e.preventDefault();
-        if (state.readOnly) { toast('Режим просмотра'); return; }
         Object.assign(state.journal, {
           title: $('#fTitle').value.trim() || 'АрендаЛог',
           address: $('#fAddress').value.trim(),
@@ -1606,17 +1707,11 @@
         });
         await saveJournal();
         renderHeader(); renderDeadlines();
-        toast('Сохранено');
-        if (global.Sync && global.Sync.connected()) global.Sync.pushMeta();
-      });
-
-      $('#btnLock').addEventListener('click', async () => {
-        const pin = await DB.getSet('pin', null);
-        if (pin) { await requirePin(); return; }
-        await DB.set('readOnly', true);
-        state.readOnly = true;
-        renderHeader(); renderStats();
-        toast('Режим просмотра включён');
+        const st = state.journal.start;
+        const startedLongAgo = st && (Date.now() - new Date(st).getTime()) > 3 * 86400000;
+        toast(startedLongAgo && !state.events.length
+          ? 'Сохранено. Журнал начат с середины срока — записи пойдут с сегодняшнего дня, в отчёте это будет указано.'
+          : 'Сохранено');
       });
 
       $('#btnReport').addEventListener('click', () => showReport(false));
@@ -1629,12 +1724,6 @@
       $('#btnFaq').addEventListener('click', showFaq);
       $('#btnTerms').addEventListener('click', showTerms);
       $('#btnPin').addEventListener('click', setPin);
-      $('#btnReadOnly').addEventListener('click', async () => {
-        state.readOnly = !state.readOnly;
-        await DB.set('readOnly', state.readOnly);
-        renderHeader(); renderStats();
-        toast(state.readOnly ? 'Режим просмотра включён' : 'Редактирование разрешено');
-      });
       if (global.Update) {
         $('#btnCheckUpdate').addEventListener('click', () => global.Update.manual());
         $('#btnDiag').addEventListener('click', () => global.Update.diagnose());

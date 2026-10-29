@@ -4,7 +4,7 @@
   const { U, DB } = global.AL;
 
   const REPO = 'luckyvoron-tech/arendalog';
-  const CURRENT = '1.0.4';
+  const CURRENT = '1.0.5';
   const CHECK_INTERVAL = 6 * 3600 * 1000;
   const TIMEOUT = 12000;
 
@@ -89,6 +89,21 @@
       return res;
     },
 
+    /* установка «в один тап»: скачать APK и открыть системный установщик */
+    install(url) {
+      try {
+        if (typeof AndroidBridge !== 'undefined' && AndroidBridge && AndroidBridge.installUpdate) {
+          const raw = AndroidBridge.installUpdate(url);
+          const res = raw ? JSON.parse(raw) : null;
+          if (res && res.ok) {
+            global.UI.toast('Скачиваю обновление…');
+            return true;
+          }
+        }
+      } catch (e) { }
+      return false;
+    },
+
     render(info) {
       const box = document.getElementById('updateBox');
       if (!box || !info || info.ok === false) return;
@@ -97,7 +112,11 @@
       box.style.borderColor = 'rgba(76,141,255,.45)';
       box.style.color = '#cfe0ff';
       box.innerHTML = '⬆️ Доступна версия ' + U.esc(info.version) + ' · ' +
-        '<a href="' + U.esc(info.url) + '" style="color:#fff;font-weight:700;text-decoration:underline">скачать</a>';
+        '<a href="' + U.esc(info.url) + '" id="updBannerGo" style="color:#fff;font-weight:700;text-decoration:underline">обновить</a>';
+      const go = box.querySelector('#updBannerGo');
+      if (go) go.addEventListener('click', function (e) {
+        if (UPD.install(info.url)) e.preventDefault();
+      });
     },
 
     hide() {
@@ -141,8 +160,16 @@
           '<div class="card" style="border-color:rgba(47,191,113,.45);background:rgba(47,191,113,.08)">' +
           '<b style="color:#a9e8c4">Доступна версия ' + U.esc(res.version) + '</b>' +
           '<div class="muted small" style="margin-top:6px">Установлена ' + U.esc(CURRENT) + '</div></div>' +
-          '<a class="btn primary" href="' + U.esc(res.url) + '" style="text-decoration:none;display:block;text-align:center">Скачать обновление</a>' +
-          '<p class="muted small" style="margin-top:10px">Откроется браузер. Скачанный файл нужно открыть и подтвердить установку — данные сохранятся.</p>';
+          '<button class="btn primary" id="updInstall">Скачать и установить</button>' +
+          '<a class="btn" href="' + U.esc(res.url) + '" style="text-decoration:none;display:block;text-align:center;margin-top:8px">Открыть в браузере</a>' +
+          '<p class="muted small" style="margin-top:10px">Файл скачается и сразу откроется установщик. Подтвердите установку — данные сохранятся.</p>';
+        const inst = body.querySelector('#updInstall');
+        if (inst) inst.addEventListener('click', () => {
+          if (!UPD.install(res.url)) {
+            global.UI.toast('Открываю ссылку в браузере');
+            window.open(res.url, '_blank');
+          }
+        });
         UPD.render(res);
       } else {
         body.innerHTML =

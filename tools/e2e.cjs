@@ -364,6 +364,42 @@ class CDP {
   check('у каждого пункта есть место под снимки', slots === shots, slots);
   await cdp.eval('document.querySelector("#modalClose").click()');
 
+  console.log('\n[15] Договор аренды и начало с середины срока');
+  await cdp.eval('UI.showTab("object")');
+  await sleep(400);
+  const emptyContract = await cdp.eval('document.querySelector("#contractList").innerText');
+  check('без договора показана подсказка', /Договор пока не добавлен/.test(emptyContract || ''), emptyContract);
+
+  const contractCells = await cdp.eval(`(async () => {
+    const pid = 'test-contract-1';
+    const blob = new Blob([new Uint8Array([255,216,255,217])], { type: 'image/jpeg' });
+    await AL.DB.put('photos', {
+      id: pid, journalId: UI.state.journal.id, eventId: null, blob,
+      mime: 'image/jpeg', w: 10, h: 10, sha256: 'abc', ts: new Date().toISOString(),
+      kind: 'photo', name: 'dogovor-1.jpg'
+    });
+    UI.state.journal.contract = [pid];
+    await AL.DB.put('journals', UI.state.journal);
+    await UI.loadAll();
+    UI.showTab('object');
+    return document.querySelectorAll('#contractList .photo-cell').length;
+  })()`);
+  check('страница договора добавлена и показана', contractCells === 1, contractCells);
+
+  const contractInReport = await cdp.eval(`(async () => {
+    UI.state.journal.start = '2025-01-01';
+    UI.state.journal.end = '2026-12-31';
+    await AL.DB.put('journals', UI.state.journal);
+    await UI.loadAll();
+    UI.showTab('report');
+    document.querySelector('#btnReport').click();
+    await new Promise(r => setTimeout(r, 600));
+    return document.querySelector('#printArea').textContent;
+  })()`);
+  check('в отчёте есть договор', /Договор аренды:/.test(contractInReport || ''), (contractInReport || '').slice(0, 80));
+  check('в отчёте указано, с какой даты ведутся записи', /Записи ведутся с:/.test(contractInReport || ''));
+  check('отмечено, что за ранний период записей нет', /за более ранний период записей нет/.test(contractInReport || ''));
+
   console.log('\n════════════════════════');
   console.log('Пройдено: ' + pass + ' · Провалено: ' + fail);
   try { ws.close(); } catch (e) { }

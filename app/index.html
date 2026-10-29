@@ -20,7 +20,6 @@
         <div class="t2" id="objSub">журнал аренды и доказательства</div>
       </div>
     </div>
-    <button class="iconbtn" id="btnLock" title="Заблокировать">🔒</button>
   </header>
 
   <main id="screens">
@@ -86,6 +85,14 @@
         </label>
         <button class="btn primary" type="submit">Сохранить</button>
       </form>
+
+      <h2 class="h2">Договор аренды</h2>
+      <div class="card">
+        <div id="contractList"></div>
+        <button class="btn primary" id="btnContractPhoto" style="margin-top:10px">📷 Снять страницу договора</button>
+        <button class="btn" id="btnContractFile" style="margin-top:8px">📎 Загрузить файл (PDF или фото)</button>
+        <p class="muted small">Сфотографируйте договор целиком — постранично. Он всегда под рукой: открыть, показать, отправить. Копия и пакет доказательств включают его автоматически.</p>
+      </div>
 
       <h2 class="h2">Зоны и комнаты</h2>
       <div class="card">
@@ -199,38 +206,10 @@
         <button class="btn" id="btnDiag" style="margin-top:8px">Диагностика связи</button>
       </div>
 
-      <details class="card">
-        <summary><b>Для продвинутых</b></summary>
-        <p class="muted small" style="margin-top:8px">Здесь то, без чего приложение полностью работает. Трогайте, только если понимаете зачем.</p>
-
-        <div class="kv"><span>Режим просмотра</span><b id="roInfo">выключен</b></div>
-        <button class="btn" id="btnReadOnly">Включить режим просмотра</button>
-        <p class="muted small">Блокирует изменения — на случай, когда телефон передают посмотреть другому человеку.</p>
-
-        <hr style="border:none;border-top:1px solid #2a323d;margin:14px 0">
-
-        <div class="kv"><span>Сервер</span><b id="syncState">не подключён</b></div>
-        <label>Адрес сервера
-          <input id="fServer" placeholder="https://sync.example.ru">
-        </label>
-        <div class="grid2">
-          <button class="btn" id="btnSpaceCreate">Создать пространство</button>
-          <button class="btn" id="btnJoin">Войти по коду</button>
-        </div>
-        <div class="grid2">
-          <button class="btn" id="btnSyncNow">Синхронизировать</button>
-          <button class="btn" id="btnLive">Следить в реальном времени</button>
-        </div>
-        <div class="grid2">
-          <button class="btn" id="btnInvite2">Пригласить арендодателя</button>
-          <button class="btn" id="btnInviteCo">Пригласить проживающего</button>
-        </div>
-        <p class="muted small">Только если у вас есть собственный сервер. Без него всё работает: записи на телефоне, арендодателю передаётся файл.</p>
-
-        <hr style="border:none;border-top:1px solid #2a323d;margin:14px 0">
-
+      <div class="card danger">
         <button class="btn danger" id="btnWipe">Удалить все данные</button>
-      </details>
+        <p class="muted small">Удаляет журнал, фотографии и договор с этого телефона без возможности восстановления.</p>
+      </div>
 
       <p class="muted small center">АрендаЛог · офлайн-приложение с открытым кодом</p>
     </section>
@@ -261,7 +240,6 @@
 
 <script src="js/verifier-data.js"></script>
 <script src="js/core.js"></script>
-<script src="js/sync.js"></script>
 <script src="js/update.js"></script>
 <script src="js/ui.js"></script>
 <script src="js/main.js"></script>

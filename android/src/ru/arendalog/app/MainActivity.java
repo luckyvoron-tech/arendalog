@@ -27,6 +27,7 @@ import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.FrameLayout;
+import android.widget.Toast;
 
 import org.json.JSONObject;
 
@@ -405,6 +406,77 @@ public class MainActivity extends Activity {
                 android.os.Vibrator v = (android.os.Vibrator) getSystemService(Context.VIBRATOR_SERVICE);
                 if (v != null && v.hasVibrator()) v.vibrate(ms);
             } catch (Exception ignored) { }
+        }
+
+        /* скачивает APK обновления и открывает системный установщик */
+        @JavascriptInterface
+        public String installUpdate(final String url) {
+            try {
+                new Thread(new Runnable() {
+                    @Override
+                    public void run() {
+                        try {
+                            final File apk = downloadApk(url);
+                            runOnUiThread(new Runnable() {
+                                @Override
+                                public void run() {
+                                    fireInstall(apk);
+                                }
+                            });
+                        } catch (final Exception e) {
+                            runOnUiThread(new Runnable() {
+                                @Override
+                                public void run() {
+                                    Toast.makeText(MainActivity.this,
+                                            "Не удалось скачать обновление: " + e.getMessage(),
+                                            Toast.LENGTH_LONG).show();
+                                }
+                            });
+                        }
+                    }
+                }).start();
+                return "{\"ok\":true}";
+            } catch (Exception e) {
+                return "{\"ok\":false}";
+            }
+        }
+
+        private File downloadApk(String url) throws Exception {
+            File file = new File(getCacheDir(), "update.apk");
+            if (file.exists() && !file.delete()) throw new Exception("файл занят");
+            HttpURLConnection conn = (HttpURLConnection) new URL(url).openConnection();
+            conn.setInstanceFollowRedirects(true);
+            conn.setConnectTimeout(20000);
+            conn.setReadTimeout(120000);
+            InputStream in = null;
+            FileOutputStream out = new FileOutputStream(file);
+            try {
+                conn.connect();
+                in = conn.getInputStream();
+                byte[] buf = new byte[8192];
+                int n;
+                while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
+            } finally {
+                if (in != null) in.close();
+                out.close();
+                conn.disconnect();
+            }
+            return file;
+        }
+
+        private void fireInstall(File apk) {
+            try {
+                Intent intent = new Intent(Intent.ACTION_VIEW);
+                intent.setDataAndType(
+                        Uri.parse("content://" + getPackageName() + ".apk/update.apk"),
+                        "application/vnd.android.package-archive");
+                intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK);
+                startActivity(intent);
+            } catch (Exception e) {
+                Toast.makeText(MainActivity.this,
+                        "Разрешите установку приложений из этого источника и повторите",
+                        Toast.LENGTH_LONG).show();
+            }
         }
 
         @JavascriptInterface

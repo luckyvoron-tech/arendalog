@@ -1166,14 +1166,17 @@
     const kp = await Crypto.ensureKeys();
     const pubJwk = await Crypto.publicJwk();
     const photos = [];
+    const contractOnly = new Set(invite ? (state.journal.contract || []) : []);
     for (const id in state.photos) {
+      if (contractOnly.has(id)) continue; // арендодателю не нужны сканы вашего договора
       const p = state.photos[id];
       photos.push({ id: p.id, eventId: p.eventId, mime: p.mime, sha256: p.sha256, b64: await blobToB64(p.blob) });
     }
     const res = await verifyChain();
     const pack = {
       format: 'arendalog/1', kind: invite ? 'invite' : 'backup',
-      exportedAt: U.nowISO(), journal: state.journal,
+      exportedAt: U.nowISO(),
+      journal: invite ? Object.assign({}, state.journal, { contract: [] }) : state.journal,
       events: state.events, handovers: state.handovers, photos,
       integrity: { rootHash: res.root, keyFingerprint: kp.pubHex },
       pubKeyJwk: pubJwk,
@@ -1189,6 +1192,124 @@
     toast(r.ok ? 'Файл сохранён: ' + (r.path || name) : 'Ошибка: ' + r.error);
   }
 
+  /* проверка присланного файла копии: хеши, цепочка, подпись, совпадение корня */
+  async function checkPack(pack) {
+    const events = pack.events || [];
+    const problems = [];
+    const groups = new Map();
+    const myAuthor = pack.authorId || null;
+    for (const ev of events) {
+      const k = (!ev.authorId || ev.authorId === myAuthor) ? 'local' : ev.authorId;
+      if (!groups.has(k)) groups.set(k, []);
+      groups.get(k).push(ev);
+    }
+    const roots = {};
+    for (const [author, list] of groups) {
+      list.sort((a, b) => (a.seq || 0) - (b.seq || 0));
+      let prev = '';
+      let broken = false;
+      for (const ev of list) {
+        if ((ev.prevHash || '') !== prev) { problems.push('разрыв цепочки на записи #' + ev.seq); broken = true; break; }
+        const h = await U.sha256Hex(U.canonical(Object.assign({}, baseForHash(ev), { prevHash: ev.prevHash || '' })));
+        if (h !== ev.hash) { problems.push('содержимое записи #' + ev.seq + ' изменено'); broken = true; break; }
+        if (pack.pubKeyJwk && ev.sig) {
+          let okSig = false;
+          try { okSig = await Crypto.verifyWith(pack.pubKeyJwk, ev.hash, ev.sig); } catch (e) { okSig = false; }
+          if (!okSig) { problems.push('подпись записи #' + ev.seq + ' не подходит к ключу из файла'); broken = true; break; }
+        }
+        prev = ev.hash;
+      }
+      if (prev && !broken) roots[author] = prev;
+    }
+    const root = Object.keys(roots).sort().map(k => roots[k]).join(':');
+    const declared = pack.integrity && pack.integrity.rootHash;
+    return {
+      problems,
+      root,
+      declared,
+      rootOk: declared ? declared === root : null,
+      events: events.length,
+      handovers: (pack.handovers || []).length,
+      photos: (pack.photos || []).length
+    };
+  }
+
+  function renderImportPreview(pack, check) {
+    const j = pack.journal || {};
+    const bad = check.problems.length > 0;
+    const wrap = el('div');
+    const rows = [
+      ['Объект', j.title || '—'],
+      ['Адрес', j.address || '—'],
+      ['Период', (U.fmtDate(j.start) || '—') + ' — ' + (U.fmtDate(j.end) || '—')],
+      ['Записей', String(check.events)],
+      ['Приёмок и сдач', String(check.handovers)],
+      ['Файлов', String(check.photos)],
+      ['Корневой хеш', (check.root || '—').slice(0, 20) + '…']
+    ].map(function (r) {
+      return '<div class="kv"><span>' + U.esc(r[0]) + '</span><b class="small">' + U.esc(r[1]) + '</b></div>';
+    }).join('');
+
+    let verdict;
+    if (bad) {
+      verdict = '<div class="card" style="border-color:#6b2b30;background:#211517">' +
+        '<b style="color:#ffb3b4">Файл не совпадает с подписями</b>' +
+        '<div style="margin-top:8px;font-size:13.5px">' + U.esc(check.problems.slice(0, 3).join('; ')) + '</div>' +
+        '<div class="muted small" style="margin-top:8px">Такое бывает при повреждении файла или при правке содержимого. ' +
+        'Импортировать можно, но доверять этим записям нельзя.</div></div>';
+    } else if (check.rootOk === false) {
+      verdict = '<div class="card" style="border-color:#6b2b30;background:#211517">' +
+        '<b style="color:#ffb3b4">Корневой хеш не совпадает</b>' +
+        '<div class="muted small" style="margin-top:8px">Записи выглядят целыми, но итоговый хеш в файле другой. ' +
+        'Файл мог быть собран заново.</div></div>';
+    } else {
+      verdict = '<div class="card" style="border-color:rgba(47,191,113,.45);background:rgba(47,191,113,.08)">' +
+        '<b style="color:#a9e8c4">Подписи и цепочка сходятся</b>' +
+        '<div class="muted small" style="margin-top:6px">Файл не меняли после того, как его подписало устройство. ' +
+        'Это подтверждает внутреннюю целостность, но не то, кто именно этот файл создал.</div></div>';
+    }
+
+    const local = state.events.length
+      ? '<div class="card"><b style="color:#ffd9a8">Текущий журнал будет заменён</b>' +
+        '<div class="muted small" style="margin-top:6px">На телефоне сейчас ' + state.events.length +
+        ' записей. После импорта они исчезнут. Сначала сохраните копию, если она нужна.</div></div>'
+      : '';
+
+    wrap.innerHTML = verdict + '<div class="card">' + rows + '</div>' + local +
+      '<button class="btn ' + (bad ? 'danger' : 'primary') + '" id="impGo">' +
+      (bad ? 'Импортировать всё равно' : 'Импортировать') + '</button>';
+
+    wrap.querySelector('#impGo').addEventListener('click', () => applyImport(pack));
+    openModal('Проверка файла', wrap);
+  }
+
+  async function applyImport(pack) {
+    try {
+      await DB.clearAll();
+      if (pack.pubKeyJwk) await DB.set('viewerKey', pack.pubKeyJwk);
+      if (pack.journal && !pack.journal.pubHex) pack.journal.pubHex = pack.signerPubHex || null;
+      await DB.put('journals', pack.journal);
+      await DB.set('activeJournal', pack.journal.id);
+      for (const ev of pack.events || []) await DB.put('events', ev);
+      for (const hv of pack.handovers || []) await DB.put('handovers', hv);
+      for (const p of pack.photos || []) {
+        const bytes = U.unb64(p.b64);
+        await DB.put('photos', {
+          id: p.id, journalId: pack.journal.id, eventId: p.eventId,
+          blob: new Blob([bytes], { type: p.mime || 'image/jpeg' }),
+          mime: p.mime, sha256: p.sha256, ts: U.nowISO(),
+          kind: p.kind || 'photo', name: p.name || null
+        });
+      }
+      closeModal();
+      await loadAll();
+      showTab('home');
+      toast(pack.kind === 'invite' ? 'Журнал открыт' : 'Журнал восстановлен');
+    } catch (e) {
+      toast('Не удалось импортировать: ' + e.message);
+    }
+  }
+
   async function importBackup() {
     const input = el('input', { type: 'file', accept: '.alog,application/json' });
     input.style.display = 'none';
@@ -1197,32 +1318,17 @@
       const file = (input.files || [])[0];
       input.remove();
       if (!file) return;
+      let pack;
       try {
-        const text = await file.text();
-        const pack = JSON.parse(text);
-        if (pack.format !== 'arendalog/1') throw new Error('неизвестный формат');
-        if (!confirm(`Импортировать журнал «${pack.journal.title || ''}»?\nСобытий: ${(pack.events || []).length}. Текущие данные будут заменены.`)) return;
-        await DB.clearAll();
-        if (pack.pubKeyJwk) await DB.set('viewerKey', pack.pubKeyJwk);
-        if (pack.journal && !pack.journal.pubHex) pack.journal.pubHex = pack.signerPubHex || null;
-        await DB.put('journals', pack.journal);
-        await DB.set('activeJournal', pack.journal.id);
-        for (const ev of pack.events || []) await DB.put('events', ev);
-        for (const hv of pack.handovers || []) await DB.put('handovers', hv);
-        for (const p of pack.photos || []) {
-          const bytes = U.unb64(p.b64);
-          await DB.put('photos', {
-            id: p.id, journalId: pack.journal.id, eventId: p.eventId,
-            blob: new Blob([bytes], { type: p.mime || 'image/jpeg' }),
-            mime: p.mime, sha256: p.sha256, ts: U.nowISO()
-          });
-        }
-        await loadAll();
-        showTab('home');
-        toast(pack.kind === 'invite' ? 'Открыт журнал в режиме просмотра' : 'Журнал восстановлен');
+        pack = JSON.parse(await file.text());
       } catch (e) {
-        toast('Не удалось импортировать: ' + e.message);
+        toast('Файл не читается');
+        return;
       }
+      if (!pack || pack.format !== 'arendalog/1') { toast('Это не файл АрендаЛога'); return; }
+      toast('Проверяю файл…');
+      const check = await checkPack(pack);
+      renderImportPreview(pack, check);
     });
     input.click();
   }
@@ -1417,7 +1523,10 @@
     ['Где фотографии? Их нет в галерее.',
       'Фото хранятся внутри приложения и попадают в копию и в пакет доказательств. В галерею телефона они не дублируются.'],
     ['Google пишет, что приложение может быть опасным. Что делать?',
-      'Это стандартное предупреждение для программ, установленных не из Play Маркета: Google не знает эту сборку и подстраховывается. Приложение не просит доступ к контактам, геолокации и не отправляет данные — только запрашивает дату у сервера времени. Код открыт, его можно проверить. Чтобы таких предупреждений не было совсем, приложение должно выйти в магазине приложений.'],    ['Поможет ли это в суде?',
+      'Это стандартное предупреждение для программ, установленных не из Play Маркета: Google не знает эту сборку и подстраховывается. Приложение не просит доступ к контактам, геолокации и не отправляет данные — только запрашивает дату у сервера времени. Код открыт, его можно проверить. Чтобы таких предупреждений не было совсем, приложение должно выйти в магазине приложений.'],    ['Кому-то попала моя копия. Чем это грозит?',
+      'Он увидит всё, что в журнале: адрес, стороны, фото, суммы. Изменить файл он может — но при импорте приложение проверяет подписи и корневой хеш и покажет красным, что файл правили. Подсунуть вам испорченную копию незаметно не получится, а изменить журнал на вашем телефоне он не может: связи между устройствами нет.'],
+    ['Как понять, что копия подлинная?',
+      'Сверьте корневой хеш: в отчёте он напечатан, и он же был при экспорте. Если значения расходятся — файл собрали заново. Надёжнее всего сразу отправить копию юристу или себе на почту: тогда она зафиксирована у третьей стороны на конкретную дату.'],    ['Поможет ли это в суде?',
       'Суд оценивает доказательства по своему внутреннему убеждению (статья 67 ГПК РФ). Приложение даёт датированные, подписанные и заверенные независимым временем записи — это сильнее скриншотов, но исход дела не гарантирует.']
   ];
 
@@ -1798,7 +1907,7 @@
     },
     loadAll, renderStats, renderTimeline, renderHandovers, renderObject, renderDeadlines,
     requirePin, showTab, toast, verifyChain, buildEvidencePackage, refreshVersionCard,
-    openModal, closeModal, ensureTerms, refreshTsaInfo, refreshBackupBanner, buildReportWithContract, printWithContract
+    openModal, closeModal, ensureTerms, refreshTsaInfo, refreshBackupBanner, buildReportWithContract, printWithContract, checkPack, renderImportPreview
   };
   global.UI = UI;
 })(window);

@@ -407,6 +407,45 @@ class CDP {
   const hasPdfBtn = await cdp.eval('!!document.querySelector("#btnPrintAll")');
   check('кнопка «Договор + записи (PDF)» есть', hasPdfBtn === true);
 
+  console.log('\n[16] Проверка присланного файла копии');
+  const packCheck = await cdp.eval(`(async () => {
+    const kp = await AL.Crypto.ensureKeys();
+    const jwk = await AL.Crypto.publicJwk();
+    const chain = await UI.verifyChain();
+    const pack = {
+      format: 'arendalog/1', kind: 'backup', exportedAt: AL.U.nowISO(),
+      journal: UI.state.journal, events: UI.state.events, handovers: UI.state.handovers,
+      photos: [], integrity: { rootHash: chain.root }, pubKeyJwk: jwk
+    };
+    const good = await UI.checkPack(pack);
+    const bad = JSON.parse(JSON.stringify(pack));
+    if (bad.events.length) bad.events[0].title = 'Подменённый заголовок';
+    const tampered = await UI.checkPack(bad);
+    return JSON.stringify({ good, tampered });
+  })()`);
+  const pc = JSON.parse(packCheck);
+  check('неизменённый файл проходит проверку', pc.good.problems.length === 0, pc.good.problems);
+  check('корневой хеш совпадает', pc.good.rootOk === true, pc.good.rootOk);
+  check('подменённое содержимое обнаружено', pc.tampered.problems.length > 0, pc.tampered.problems);
+  check('подмена описана понятно', /изменено|не подходит|разрыв/.test((pc.tampered.problems || []).join('; ')), pc.tampered.problems);
+
+  const previewText = await cdp.eval(`(async () => {
+    const jwk = await AL.Crypto.publicJwk();
+    const chain = await UI.verifyChain();
+    const pack = {
+      format: 'arendalog/1', kind: 'backup', journal: UI.state.journal,
+      events: UI.state.events, handovers: UI.state.handovers, photos: [],
+      integrity: { rootHash: chain.root }, pubKeyJwk: jwk
+    };
+    UI.renderImportPreview(pack, await UI.checkPack(pack));
+    await new Promise(r => setTimeout(r, 200));
+    return document.querySelector('#modalBody').textContent;
+  })()`);
+  check('перед импортом показывается проверка файла', /Подписи и цепочка сходятся/.test(previewText || ''), (previewText || '').slice(0, 60));
+  check('предупреждает о замене текущего журнала', /будет заменён/.test(previewText || ''));
+  await cdp.eval('document.querySelector("#modalClose").click()');
+  await sleep(300);
+
   console.log('\n════════════════════════');
   console.log('Пройдено: ' + pass + ' · Провалено: ' + fail);
   try { ws.close(); } catch (e) { }

@@ -31,6 +31,8 @@
       await UI.loadAll();
       UI.renderHandovers();
       UI.showTab('home');
+      // проверка обновлений — в фоне, не блокирует старт
+      if (global.Update) setTimeout(() => global.Update.check(true).catch(() => {}), 1500);
 
       // просим браузер не вытеснять данные
       if (navigator.storage && navigator.storage.persist) {

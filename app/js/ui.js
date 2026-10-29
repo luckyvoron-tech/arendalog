@@ -1458,6 +1458,11 @@
         renderHeader(); renderStats();
         toast(state.readOnly ? 'Режим просмотра включён' : 'Редактирование разрешено');
       });
+      if (global.Update) {
+        $('#btnCheckUpdate').addEventListener('click', () => global.Update.manual());
+        $('#verInfo').textContent = global.Update.current;
+      }
+
       $('#btnWipe').addEventListener('click', async () => {
         if (!confirm('Удалить все данные без возможности восстановления?')) return;
         await DB.clearAll();

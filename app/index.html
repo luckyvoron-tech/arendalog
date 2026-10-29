@@ -27,6 +27,7 @@
 
     <!-- ───────────── Журнал ───────────── -->
     <section class="screen active" id="screen-home">
+      <div class="integrity hide" id="updateBox"></div>
       <div class="chips" id="filterChips">
         <button class="chip active" data-filter="all">Всё</button>
         <button class="chip" data-filter="defect">Проблемы</button>
@@ -207,7 +208,11 @@
       <div class="card danger">
         <button class="btn danger" id="btnWipe">Удалить все данные</button>
       </div>
-      <p class="muted small center">АрендаЛог · версия 1.0 · офлайн-приложение</p>
+      <div class="card">
+        <div class="kv"><span>Версия</span><b id="verInfo">—</b></div>
+        <button class="btn" id="btnCheckUpdate">Проверить обновления</button>
+      </div>
+      <p class="muted small center">АрендаЛог · офлайн-приложение с открытым кодом</p>
     </section>
 
   </main>
@@ -237,6 +242,7 @@
 <script src="js/verifier-data.js"></script>
 <script src="js/core.js"></script>
 <script src="js/sync.js"></script>
+<script src="js/update.js"></script>
 <script src="js/ui.js"></script>
 <script src="js/main.js"></script>
 </body>

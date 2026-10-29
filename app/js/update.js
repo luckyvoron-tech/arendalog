@@ -4,7 +4,7 @@
   const { U, DB } = global.AL;
 
   const REPO = 'luckyvoron-tech/arendalog';
-  const CURRENT = '1.0.6';
+  const CURRENT = '1.0.7';
   const CHECK_INTERVAL = 6 * 3600 * 1000;
   const TIMEOUT = 12000;
 
@@ -89,19 +89,50 @@
       return res;
     },
 
-    /* установка «в один тап»: скачать APK и открыть системный установщик */
-    install(url) {
+    /* скачивание APK в «Загрузки»: установку запускает сам пользователь —
+       приложению не нужно разрешение на установку, и Play Protect не ругается */
+    download(url) {
       try {
-        if (typeof AndroidBridge !== 'undefined' && AndroidBridge && AndroidBridge.installUpdate) {
-          const raw = AndroidBridge.installUpdate(url);
+        if (typeof AndroidBridge !== 'undefined' && AndroidBridge && AndroidBridge.downloadUpdate) {
+          const raw = AndroidBridge.downloadUpdate(url);
           const res = raw ? JSON.parse(raw) : null;
-          if (res && res.ok) {
-            global.UI.toast('Скачиваю обновление…');
-            return true;
-          }
+          if (res && res.ok) return res;
+          if (res && res.error) global.UI.toast('Не удалось скачать: ' + res.error);
+        }
+      } catch (e) { }
+      return null;
+    },
+
+    openDownloads() {
+      try {
+        if (typeof AndroidBridge !== 'undefined' && AndroidBridge && AndroidBridge.openDownloads) {
+          AndroidBridge.openDownloads();
+          return true;
         }
       } catch (e) { }
       return false;
+    },
+
+    /* диалог после скачивания: что делать дальше */
+    showDownloaded(url) {
+      const body = document.createElement('div');
+      body.innerHTML =
+        '<div class="card" style="border-color:rgba(47,191,113,.45);background:rgba(47,191,113,.08)">' +
+        '<b style="color:#a9e8c4">Файл скачан</b>' +
+        '<div class="muted small" style="margin-top:6px">Он лежит в папке «Загрузки»</div></div>' +
+        '<div class="card"><b>Как установить</b>' +
+        '<ol style="margin:8px 0 0;padding-left:20px;font-size:14px">' +
+        '<li>нажмите «Открыть Загрузки»;</li>' +
+        '<li>откройте файл <b>ArendaLog-…apk</b>;</li>' +
+        '<li>подтвердите установку — данные сохранятся.</li>' +
+        '</ol></div>' +
+        '<button class="btn primary" id="updOpenDl">Открыть Загрузки</button>' +
+        '<a class="btn" href="' + U.esc(url) + '" style="text-decoration:none;display:block;text-align:center;margin-top:8px">Или скачать через браузер</a>';
+      const openBtn = body.querySelector('#updOpenDl');
+      openBtn.addEventListener('click', () => {
+        if (!UPD.openDownloads()) global.UI.toast('Откройте приложение «Файлы» → «Загрузки»');
+      });
+      global.UI.openModal('Обновление скачано', body);
     },
 
     render(info) {
@@ -115,7 +146,10 @@
         '<a href="' + U.esc(info.url) + '" id="updBannerGo" style="color:#fff;font-weight:700;text-decoration:underline">обновить</a>';
       const go = box.querySelector('#updBannerGo');
       if (go) go.addEventListener('click', function (e) {
-        if (UPD.install(info.url)) e.preventDefault();
+        e.preventDefault();
+        const res = UPD.download(info.url);
+        if (res) UPD.showDownloaded(info.url);
+        else window.open(info.url, '_blank');
       });
     },
 
@@ -160,12 +194,14 @@
           '<div class="card" style="border-color:rgba(47,191,113,.45);background:rgba(47,191,113,.08)">' +
           '<b style="color:#a9e8c4">Доступна версия ' + U.esc(res.version) + '</b>' +
           '<div class="muted small" style="margin-top:6px">Установлена ' + U.esc(CURRENT) + '</div></div>' +
-          '<button class="btn primary" id="updInstall">Скачать и установить</button>' +
+          '<button class="btn primary" id="updDownload">Скачать обновление</button>' +
           '<a class="btn" href="' + U.esc(res.url) + '" style="text-decoration:none;display:block;text-align:center;margin-top:8px">Открыть в браузере</a>' +
-          '<p class="muted small" style="margin-top:10px">Файл скачается и сразу откроется установщик. Подтвердите установку — данные сохранятся.</p>';
-        const inst = body.querySelector('#updInstall');
-        if (inst) inst.addEventListener('click', () => {
-          if (!UPD.install(res.url)) {
+          '<p class="muted small" style="margin-top:10px">Файл скачается в «Загрузки». Откройте его и подтвердите установку — данные сохранятся.</p>';
+        const dl = body.querySelector('#updDownload');
+        if (dl) dl.addEventListener('click', () => {
+          const got = UPD.download(res.url);
+          if (got) UPD.showDownloaded(res.url);
+          else {
             global.UI.toast('Открываю ссылку в браузере');
             window.open(res.url, '_blank');
           }

@@ -408,77 +408,52 @@ public class MainActivity extends Activity {
             } catch (Exception ignored) { }
         }
 
-        /* скачивает APK обновления и открывает системный установщик */
+        /* скачивает APK обновления в «Загрузки»; установку запускает сам пользователь */
         @JavascriptInterface
-        public String installUpdate(final String url) {
+        public String downloadUpdate(final String url) {
             try {
-                new Thread(new Runnable() {
-                    @Override
-                    public void run() {
-                        try {
-                            final File apk = downloadApk(url);
-                            runOnUiThread(new Runnable() {
-                                @Override
-                                public void run() {
-                                    fireInstall(apk);
-                                }
-                            });
-                        } catch (final Exception e) {
-                            runOnUiThread(new Runnable() {
-                                @Override
-                                public void run() {
-                                    Toast.makeText(MainActivity.this,
-                                            "Не удалось скачать обновление: " + e.getMessage(),
-                                            Toast.LENGTH_LONG).show();
-                                }
-                            });
-                        }
-                    }
-                }).start();
-                return "{\"ok\":true}";
-            } catch (Exception e) {
-                return "{\"ok\":false}";
-            }
-        }
-
-        private File downloadApk(String url) throws Exception {
-            File file = new File(getCacheDir(), "update.apk");
-            if (file.exists() && !file.delete()) throw new Exception("файл занят");
-            HttpURLConnection conn = (HttpURLConnection) new URL(url).openConnection();
-            conn.setInstanceFollowRedirects(true);
-            conn.setConnectTimeout(20000);
-            conn.setReadTimeout(120000);
-            InputStream in = null;
-            FileOutputStream out = new FileOutputStream(file);
-            try {
-                conn.connect();
-                in = conn.getInputStream();
-                byte[] buf = new byte[8192];
-                int n;
-                while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
-            } finally {
-                if (in != null) in.close();
-                out.close();
-                conn.disconnect();
-            }
-            return file;
-        }
-
-        private void fireInstall(File apk) {
-            try {
-                Intent intent = new Intent(Intent.ACTION_VIEW);
-                intent.setDataAndType(
-                        Uri.parse("content://" + getPackageName() + ".apk/update.apk"),
+                HttpURLConnection conn = (HttpURLConnection) new URL(url).openConnection();
+                conn.setInstanceFollowRedirects(true);
+                conn.setConnectTimeout(20000);
+                conn.setReadTimeout(120000);
+                java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+                InputStream in = null;
+                try {
+                    conn.connect();
+                    in = conn.getInputStream();
+                    byte[] buf = new byte[8192];
+                    int n;
+                    while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
+                } finally {
+                    if (in != null) in.close();
+                    conn.disconnect();
+                }
+                String name = "ArendaLog-" + url.replaceAll(".*/", "").replaceAll("[^A-Za-z0-9._-]", "_");
+                if (!name.toLowerCase().endsWith(".apk")) name = name + ".apk";
+                return saveFile(name, Base64.encodeToString(out.toByteArray(), Base64.NO_WRAP),
                         "application/vnd.android.package-archive");
-                intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK);
-                startActivity(intent);
             } catch (Exception e) {
-                Toast.makeText(MainActivity.this,
-                        "Разрешите установку приложений из этого источника и повторите",
-                        Toast.LENGTH_LONG).show();
+                try {
+                    return new JSONObject().put("ok", false).put("error", e.getMessage()).toString();
+                } catch (Exception ignored) {
+                    return "{\"ok\":false}";
+                }
             }
         }
 
+        @JavascriptInterface
+        public void openDownloads() {
+            runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    try {
+                        Intent i = new Intent(android.app.DownloadManager.ACTION_VIEW_DOWNLOADS);
+                        i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                        startActivity(i);
+                    } catch (Exception ignored) { }
+                }
+            });
+        }
         @JavascriptInterface
         public String deviceInfo() {
             try {

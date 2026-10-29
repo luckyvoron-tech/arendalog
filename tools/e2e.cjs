@@ -446,6 +446,46 @@ class CDP {
   await cdp.eval('document.querySelector("#modalClose").click()');
   await sleep(300);
 
+  console.log('\n[17] Шифрование копии паролем');
+  const enc = await cdp.eval(`(async () => {
+    const jwk = await AL.Crypto.publicJwk();
+    const chain = await UI.verifyChain();
+    const pack = {
+      format: 'arendalog/1', kind: 'backup', journal: UI.state.journal,
+      events: UI.state.events, handovers: [], photos: [],
+      integrity: { rootHash: chain.root }, pubKeyJwk: jwk
+    };
+    const box = await UI.encryptPack(pack, 'дождливый-вечер-42');
+    const back = await UI.decryptPack(box, 'дождливый-вечер-42');
+    let wrong = '';
+    try { await UI.decryptPack(box, 'неверный'); } catch (e) { wrong = e.name || 'error'; }
+    return JSON.stringify({
+      encryptedField: box.enc,
+      hasPlaintext: JSON.stringify(box).indexOf('Дом') >= 0,
+      eventsRestored: (back.events || []).length,
+      rootKept: back.integrity.rootHash === pack.integrity.rootHash,
+      wrongPasswordRejected: wrong !== ''
+    });
+  })()`);
+  const e2 = JSON.parse(enc);
+  check('файл помечен как зашифрованный', e2.encryptedField === 'aes-gcm', e2.encryptedField);
+  check('в файле нет открытого текста журнала', e2.hasPlaintext === false);
+  check('верный пароль возвращает записи', e2.eventsRestored === pc.good.events, e2.eventsRestored);
+  check('корневой хеш сохраняется', e2.rootKept === true);
+  check('неверный пароль не расшифровывает', e2.wrongPasswordRejected === true);
+
+  const pwDialog = await cdp.eval(`(async () => {
+    UI.askBackupPassword(false);
+    await new Promise(r => setTimeout(r, 200));
+    const t = document.querySelector('#modalBody').textContent;
+    const hasBox = !!document.querySelector('#encPw');
+    document.querySelector('#modalClose').click();
+    return JSON.stringify({ hasBox, text: t.slice(0, 400) });
+  })()`);
+  const pd = JSON.parse(pwDialog);
+  check('в диалоге копии есть поле пароля', pd.hasBox === true);
+  check('предупреждение о потере пароля показано', /восстановить её невозможно|восстановления нет/i.test(pd.text), pd.text.slice(0, 80));
+
   console.log('\n════════════════════════');
   console.log('Пройдено: ' + pass + ' · Провалено: ' + fail);
   try { ws.close(); } catch (e) { }

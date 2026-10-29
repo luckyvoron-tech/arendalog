@@ -1162,7 +1162,97 @@
     });
   }
 
+  /* ─────────────── шифрование копии паролем ─────────────── */
+  const PBKDF2_ITER = 200000;
+
+  async function deriveAesKey(password, saltB64, iter) {
+    const base = await crypto.subtle.importKey(
+      'raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveKey']);
+    return crypto.subtle.deriveKey(
+      { name: 'PBKDF2', salt: U.unb64(saltB64), iterations: iter || PBKDF2_ITER, hash: 'SHA-256' },
+      base, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
+  }
+
+  async function encryptPack(pack, password) {
+    const salt = crypto.getRandomValues(new Uint8Array(16));
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const saltB64 = U.b64(salt);
+    const key = await deriveAesKey(password, saltB64, PBKDF2_ITER);
+    const plain = new TextEncoder().encode(JSON.stringify(pack));
+    const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv: iv }, key, plain);
+    return {
+      format: 'arendalog/1', enc: 'aes-gcm',
+      kdf: { alg: 'PBKDF2-SHA256', iter: PBKDF2_ITER, salt: saltB64 },
+      iv: U.b64(iv), data: U.b64(new Uint8Array(ct))
+    };
+  }
+
+  async function decryptPack(container, password) {
+    const kdf = container.kdf || {};
+    const iter = Number(kdf.iter) || PBKDF2_ITER;
+    const key = await deriveAesKey(password, kdf.salt, iter);
+    const plain = await crypto.subtle.decrypt(
+      { name: 'AES-GCM', iv: U.unb64(container.iv) }, key, U.unb64(container.data));
+    return JSON.parse(new TextDecoder().decode(plain));
+  }
+
+  /* диалог сохранения копии: без пароля или с паролем */
+  function askBackupPassword(invite) {
+    const wrap = el('div');
+    wrap.innerHTML =
+      '<div class="card">' +
+      '<b>' + (invite ? 'Приглашение арендодателю' : 'Копия журнала') + '</b>' +
+      '<div class="muted small" style="margin-top:6px">' +
+      (invite
+        ? 'Файл откроется в приложении и покажет журнал. Сканы договора в него не попадают.'
+        : 'Один файл со всеми записями, фото и договором. Его можно открыть на новом телефоне.') +
+      '</div></div>' +
+      '<label style="display:flex;align-items:center;gap:10px;margin:6px 0 10px">' +
+      '<input type="checkbox" id="encOn" style="width:auto;margin:0">' +
+      '<span>Защитить паролем</span></label>' +
+      '<div id="encBox" style="display:none">' +
+      '<label>Пароль (минимум 6 символов)' +
+      '<input id="encPw" type="password" autocomplete="new-password" placeholder="придумайте пароль"></label>' +
+      '<label>Повторите пароль' +
+      '<input id="encPw2" type="password" autocomplete="new-password" placeholder="ещё раз"></label>' +
+      '<div class="card" style="border-color:#6b5a2b;background:#211d15">' +
+      '<b style="color:#ffd9a8">Пароль восстановить нельзя</b>' +
+      '<div style="margin-top:6px;font-size:13.5px;line-height:1.45">' +
+      'Файл шифруется на этом телефоне, пароль никуда не отправляется и нигде не хранится. ' +
+      'Если забудете пароль — копия не откроется ни у вас, ни у нас: восстановить её невозможно, ' +
+      'останется только журнал на телефоне.' +
+      '</div>' +
+      '<div class="muted small" style="margin-top:8px">Короткий пароль из цифр легко подобрать, если файл ' +
+      'попадёт в чужие руки. Надёжнее — 4–5 слов или фраза.</div></div>' +
+      '</div>' +
+      '<button class="btn primary" id="bkGo">Сохранить копию</button>';
+    const box = wrap.querySelector('#encBox');
+    const on = wrap.querySelector('#encOn');
+    on.addEventListener('change', () => { box.style.display = on.checked ? '' : 'none'; });
+
+    wrap.querySelector('#bkGo').addEventListener('click', async () => {
+      let password = '';
+      if (on.checked) {
+        const p1 = wrap.querySelector('#encPw').value;
+        const p2 = wrap.querySelector('#encPw2').value;
+        if (p1.length < 6) { toast('Пароль короче 6 символов'); return; }
+        if (p1 !== p2) { toast('Пароли не совпадают'); return; }
+        if (/^\d+$/.test(p1) && p1.length < 8) {
+          if (!confirm('Пароль только из цифр и короче 8 знаков — его легко подобрать. Всё равно продолжить?')) return;
+        }
+        password = p1;
+      }
+      closeModal();
+      await doExport(invite, password);
+    });
+    openModal(invite ? 'Приглашение' : 'Резервная копия', wrap);
+  }
+
   async function exportBackup(invite) {
+    askBackupPassword(!!invite);
+  }
+
+  async function doExport(invite, password) {
     const kp = await Crypto.ensureKeys();
     const pubJwk = await Crypto.publicJwk();
     const photos = [];
@@ -1182,14 +1272,53 @@
       pubKeyJwk: pubJwk,
       signerPubHex: state.journal.pubHex || kp.pubHex
     };
-    const b64 = btoa(unescape(encodeURIComponent(JSON.stringify(pack))));
-    const name = (invite ? 'Приглашение-арендодателю-' : 'АрендаЛог-копия-') + U.fmtDate(U.nowISO()).replace(/\./g, '-') + '.alog';
+    let payload = pack;
+    if (password) {
+      try { payload = await encryptPack(pack, password); }
+      catch (e) { toast('Не удалось зашифровать: ' + e.message); return; }
+    }
+    const b64 = btoa(unescape(encodeURIComponent(JSON.stringify(payload))));
+    const name = (invite ? 'Приглашение-арендодателю-' : 'АрендаЛог-копия-') +
+      U.fmtDate(U.nowISO()).replace(/\./g, '-') + (password ? '-защищено' : '') + '.alog';
     const r = await Bridge.saveFile(name, b64, 'application/json');
     if (r.ok && !invite) {
       await DB.set('lastBackupAt', Date.now());
       refreshBackupBanner();
     }
-    toast(r.ok ? 'Файл сохранён: ' + (r.path || name) : 'Ошибка: ' + r.error);
+    if (r.ok) toast('Файл сохранён: ' + (r.path || name) + (password ? ' (зашифрован)' : ''));
+    else toast('Ошибка: ' + r.error);
+  }
+
+  /* запрос пароля при импорте зашифрованного файла */
+  function askImportPassword(container) {
+    const wrap = el('div');
+    wrap.innerHTML =
+      '<div class="card"><b>Файл защищён паролем</b>' +
+      '<div class="muted small" style="margin-top:6px">Введите пароль, который задали при сохранении. ' +
+      'Без него файл не открыть — восстановления нет.</div></div>' +
+      '<label>Пароль<input id="impPw" type="password" autocomplete="current-password"></label>' +
+      '<button class="btn primary" id="impGo">Открыть</button>' +
+      '<p class="muted small" id="impErr" style="color:#ffb3b4;display:none"></p>';
+    const go = async () => {
+      const pw = wrap.querySelector('#impPw').value;
+      if (!pw) return;
+      go.disabled = true;
+      try {
+        const pack = await decryptPack(container, pw);
+        closeModal();
+        toast('Проверяю файл…');
+        const check = await checkPack(pack);
+        renderImportPreview(pack, check);
+      } catch (e) {
+        wrap.querySelector('#impErr').style.display = '';
+        wrap.querySelector('#impErr').textContent = 'Неверный пароль или файл повреждён';
+      } finally {
+        go.disabled = false;
+      }
+    };
+    wrap.querySelector('#impGo').addEventListener('click', go);
+    wrap.querySelector('#impPw').addEventListener('keydown', e => { if (e.key === 'Enter') go(); });
+    openModal('Защищённая копия', wrap);
   }
 
   /* проверка присланного файла копии: хеши, цепочка, подпись, совпадение корня */
@@ -1326,6 +1455,7 @@
         return;
       }
       if (!pack || pack.format !== 'arendalog/1') { toast('Это не файл АрендаЛога'); return; }
+      if (pack.enc === 'aes-gcm') { askImportPassword(pack); return; }
       toast('Проверяю файл…');
       const check = await checkPack(pack);
       renderImportPreview(pack, check);
@@ -1523,7 +1653,8 @@
     ['Где фотографии? Их нет в галерее.',
       'Фото хранятся внутри приложения и попадают в копию и в пакет доказательств. В галерею телефона они не дублируются.'],
     ['Google пишет, что приложение может быть опасным. Что делать?',
-      'Это стандартное предупреждение для программ, установленных не из Play Маркета: Google не знает эту сборку и подстраховывается. Приложение не просит доступ к контактам, геолокации и не отправляет данные — только запрашивает дату у сервера времени. Код открыт, его можно проверить. Чтобы таких предупреждений не было совсем, приложение должно выйти в магазине приложений.'],    ['Кому-то попала моя копия. Чем это грозит?',
+      'Это стандартное предупреждение для программ, установленных не из Play Маркета: Google не знает эту сборку и подстраховывается. Приложение не просит доступ к контактам, геолокации и не отправляет данные — только запрашивает дату у сервера времени. Код открыт, его можно проверить. Чтобы таких предупреждений не было совсем, приложение должно выйти в магазине приложений.'],    ['Что будет, если я забуду пароль от копии?',
+      'Копия не откроется. Пароль никуда не отправляется и нигде не сохраняется — он есть только у вас. Восстановить файл невозможно, но журнал на телефоне остаётся, и вы сможете сделать новую копию. Записывайте пароль отдельно или берите такой, который точно помните.'],    ['Кому-то попала моя копия. Чем это грозит?',
       'Он увидит всё, что в журнале: адрес, стороны, фото, суммы. Изменить файл он может — но при импорте приложение проверяет подписи и корневой хеш и покажет красным, что файл правили. Подсунуть вам испорченную копию незаметно не получится, а изменить журнал на вашем телефоне он не может: связи между устройствами нет.'],
     ['Как понять, что копия подлинная?',
       'Сверьте корневой хеш: в отчёте он напечатан, и он же был при экспорте. Если значения расходятся — файл собрали заново. Надёжнее всего сразу отправить копию юристу или себе на почту: тогда она зафиксирована у третьей стороны на конкретную дату.'],    ['Поможет ли это в суде?',
@@ -1907,7 +2038,7 @@
     },
     loadAll, renderStats, renderTimeline, renderHandovers, renderObject, renderDeadlines,
     requirePin, showTab, toast, verifyChain, buildEvidencePackage, refreshVersionCard,
-    openModal, closeModal, ensureTerms, refreshTsaInfo, refreshBackupBanner, buildReportWithContract, printWithContract, checkPack, renderImportPreview
+    openModal, closeModal, ensureTerms, refreshTsaInfo, refreshBackupBanner, buildReportWithContract, printWithContract, checkPack, renderImportPreview, encryptPack, decryptPack, askBackupPassword
   };
   global.UI = UI;
 })(window);

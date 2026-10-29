@@ -1290,6 +1290,23 @@
     openModal(existing ? 'Изменить данные' : 'Новый проживающий', wrap);
   }
 
+  /* карточка версии: текущая сборка и время последней проверки */
+  async function refreshVersionCard() {
+    const node = $('#verInfo');
+    if (!node || !global.Update) return;
+    let txt = global.Update.current;
+    try {
+      const at = await DB.getSet('updateCheckedAt', null);
+      if (at) {
+        const d = new Date(at);
+        const dd = String(d.getDate()).padStart(2, '0') + '.' + String(d.getMonth() + 1).padStart(2, '0');
+        const tt = String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+        txt += ' · проверено ' + dd + ' ' + tt;
+      }
+    } catch (e) { }
+    node.textContent = txt;
+  }
+
   function renderObject() {
     const j = state.journal;
     $('#fTitle').value = j.title || '';
@@ -1460,7 +1477,8 @@
       });
       if (global.Update) {
         $('#btnCheckUpdate').addEventListener('click', () => global.Update.manual());
-        $('#verInfo').textContent = global.Update.current;
+        $('#btnDiag').addEventListener('click', () => global.Update.diagnose());
+        refreshVersionCard();
       }
 
       $('#btnWipe').addEventListener('click', async () => {
@@ -1492,7 +1510,8 @@
       renderHandovers();
     },
     loadAll, renderStats, renderTimeline, renderHandovers, renderObject, renderDeadlines,
-    requirePin, showTab, toast, verifyChain, buildEvidencePackage
+    requirePin, showTab, toast, verifyChain, buildEvidencePackage, refreshVersionCard,
+    openModal, closeModal
   };
   global.UI = UI;
 })(window);

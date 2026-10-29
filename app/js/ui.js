@@ -170,6 +170,8 @@
     renderHeader();
     renderTimeline();
     renderStats();
+    refreshTsaInfo();
+    refreshBackupBanner();
   }
 
   function renderHeader() {
@@ -196,8 +198,8 @@
     const photos = atts.filter(a => (a.kind || 'photo') === 'photo').map(a => state.photoUrl[a.id]).filter(Boolean);
     const docs = atts.filter(a => a.kind === 'doc');
     const tsaBadge = ev.tsa
-      ? `<span class="badge ok">TSA ${U.fmtDateTime(ev.tsa.time)}</span>`
-      : `<span class="badge warn">метка в очереди</span>`;
+      ? `<span class="badge ok">время подтверждено</span>`
+      : `<span class="badge warn">ждёт подтверждения</span>`;
     const cp = ev.meta && ev.meta.counterparty ? ev.meta.counterparty : '';
     card.innerHTML = `
       <div class="ev-head">
@@ -230,7 +232,7 @@
       <div class="card">
         <div class="kv"><span>Тип</span><b>${t.ico} ${t.label}</b></div>
         <div class="kv"><span>Время устройства</span><b>${U.fmtDateTime(ev.tsDevice)}</b></div>
-        <div class="kv"><span>Метка времени</span><b>${ev.tsa ? U.fmtDateTime(ev.tsa.time) : 'нет (в очереди)'}</b></div>
+        <div class="kv"><span>Подтверждено сервером времени</span><b>${ev.tsa ? U.fmtDateTime(ev.tsa.time) : 'ожидает'}</b></div>
         ${ev.amount ? `<div class="kv"><span>Сумма</span><b>${U.money(ev.amount)}</b></div>` : ''}
         ${ev.room ? `<div class="kv"><span>Место</span><b>${U.esc(ev.room)}</b></div>` : ''}
         ${ev.severity ? `<div class="kv"><span>Критичность</span><b>${U.esc(ev.severity)}</b></div>` : ''}
@@ -244,7 +246,7 @@
         <div class="mono small" style="word-break:break-all">${ev.prevHash || '— начало цепочки —'}</div>
         <div class="muted small" style="margin-top:10px">Электронная подпись (ECDSA P-256)</div>
         <div class="mono small" style="word-break:break-all">${ev.sig}</div>
-        ${ev.tsa ? `<div class="muted small" style="margin-top:10px">Токен TSA (RFC 3161)</div><div class="mono small" style="word-break:break-all;max-height:120px;overflow:auto">${ev.tsa.token}</div>` : ''}
+        ${ev.tsa ? `<div class="muted small" style="margin-top:10px">Техническое подтверждение — для юриста</div><div class="mono small" style="word-break:break-all;max-height:120px;overflow:auto">${ev.tsa.token}</div>` : ''}
       </div>
       ${photos.length ? `<div class="card"><div class="photo-grid">${photos.map(u => `<div class="photo-cell"><img src="${u}"></div>`).join('')}</div></div>` : ''}
     `;
@@ -407,7 +409,7 @@
       <div class="muted small">Фото и документы: 📷 снимок, 📎 чек или PDF</div>
       <div class="photo-grid" id="ePhotos"></div>
       <button class="btn primary" id="eSave">Сохранить и подписать</button>
-      <p class="muted small center">Время фиксируется сейчас, событие подписывается ключом устройства и ставится в очередь на метку времени.</p>
+      <p class="muted small center">Запись сохранится и без интернета — дата подтвердится, когда появится сеть.</p>
     `;
 
     const photosBox = wrap.querySelector('#ePhotos');
@@ -646,16 +648,63 @@
             <button data-v="absent">Нет</button>
           </div>
           <input placeholder="Замечание (необязательно)">
+          <div class="item-shots"></div>
+          <button class="shotbtn" type="button">📷 Фото</button>
         `;
         const seg = it.querySelectorAll('.seg button');
+        const noteInput = it.querySelector('input');
         seg.forEach(b => b.addEventListener('click', () => {
           seg.forEach(x => x.classList.remove('on'));
           b.classList.add('on');
           item.condition = b.dataset.v;
           if (item.condition !== 'norm') noteInput.focus();
         }));
-        const noteInput = it.querySelector('input');
         noteInput.addEventListener('input', () => { item.note = noteInput.value; });
+
+        const shots = it.querySelector('.item-shots');
+        const shotBtn = it.querySelector('.shotbtn');
+        const urls = {};
+        function renderShots() {
+          shots.innerHTML = '';
+          (item.photos || []).forEach(pid => {
+            const cell = el('div', { class: 'shot' });
+            cell.innerHTML = `<img src="${urls[pid] || ''}" alt="">`;
+            cell.title = 'Нажмите, чтобы убрать';
+            cell.addEventListener('click', async () => {
+              if (!confirm('Убрать это фото?')) return;
+              item.photos = item.photos.filter(x => x !== pid);
+              try { await DB.del('photos', pid); } catch (e) { }
+              renderShots();
+            });
+            shots.appendChild(cell);
+          });
+          shotBtn.textContent = (item.photos && item.photos.length) ? '📷 Ещё фото' : '📷 Фото';
+        }
+        shotBtn.addEventListener('click', () => {
+          const input = el('input', { type: 'file', accept: 'image/*', capture: 'environment', multiple: 'multiple' });
+          input.style.display = 'none';
+          document.body.appendChild(input);
+          input.addEventListener('change', async () => {
+            for (const file of Array.from(input.files || [])) {
+              try {
+                const { blob, w, h } = await global.AL.compressImage(file, 1600);
+                const pid = U.uid();
+                const sha = await U.sha256Hex(await blob.arrayBuffer());
+                await DB.put('photos', {
+                  id: pid, journalId: state.journal.id, eventId: null,
+                  blob: blob, mime: 'image/jpeg', w: w, h: h, sha256: sha,
+                  ts: U.nowISO(), kind: 'photo', name: file.name || null
+                });
+                item.photos.push(pid);
+                urls[pid] = URL.createObjectURL(blob);
+                renderShots();
+              } catch (e) { toast('Не удалось обработать фото'); }
+            }
+            input.remove();
+          });
+          input.click();
+        });
+        renderShots();
         body.appendChild(it);
       });
       box.appendChild(node);
@@ -821,7 +870,7 @@
       ${(hv.meta.people || []).length ? `<p style="font-size:9pt;margin:1mm 0 2mm">Проживают: ${hv.meta.people.map(p => U.esc(p.name) + (p.role ? ' (' + U.esc(p.role) + ')' : '')).join(', ')}</p>` : ''}
       <table class="t2">
         ${(hv.meta.rooms || []).map(r => `<tr><td colspan="3" style="background:#f2f2f2"><b>${U.esc(r.name)}</b></td></tr>` +
-      r.items.map(i => `<tr><td>${U.esc(i.name)}</td><td>${i.condition === 'norm' ? 'норма' : i.condition === 'defect' ? 'дефект' : 'отсутствует'}</td><td>${U.esc(i.note || '')}</td></tr>`).join('')).join('')}
+      r.items.map(i => `<tr><td>${U.esc(i.name)}</td><td>${i.condition === 'norm' ? 'норма' : i.condition === 'defect' ? 'дефект' : 'отсутствует'}</td><td>${U.esc(i.note || '')}${(i.photos || []).length ? ' 📷' + i.photos.length : ''}</td></tr>`).join('')).join('')}
       </table>
       <p style="font-size:8pt;color:#555">Хеш акта: ${hv.hash}<br>Подпись: ${hv.sig}</p>
     `).join('');
@@ -850,12 +899,12 @@
       <div><b>Стороны:</b> арендатор ${U.esc(j.tenant || '—')} · арендодатель ${U.esc(j.landlord || '—')}</div>
       <div><b>Период аренды:</b> ${U.fmtDate(j.start)} — ${U.fmtDate(j.end)} ${j.rent ? '· плата ' + U.money(j.rent) + '/мес' : ''} ${j.deposit ? '· залог ' + U.money(j.deposit) : ''}</div>
       <div><b>Сформировано:</b> ${U.fmtDateTime(U.nowISO())}</div>
-      <div><b>Событий:</b> ${evs.length} · с меткой времени: ${evs.filter(e => e.tsa).length}</div>
+      <div><b>Событий:</b> ${evs.length} · подтверждено временем: ${evs.filter(e => e.tsa).length}</div>
     </div>
 
     <h2>Зафиксированные события</h2>
     <table>
-      <thead><tr><th style="width:5%">№</th><th style="width:13%">Время устройства</th><th style="width:13%">Метка времени</th><th style="width:11%">Тип</th><th>Содержание</th><th style="width:10%">Сумма</th><th style="width:16%">SHA-256 / подпись</th></tr></thead>
+      <thead><tr><th style="width:5%">№</th><th style="width:13%">Время устройства</th><th style="width:13%">Подтверждено</th><th style="width:11%">Тип</th><th>Содержание</th><th style="width:10%">Сумма</th><th style="width:16%">SHA-256 / подпись</th></tr></thead>
       <tbody>${rows || '<tr><td colspan="7" style="text-align:center;color:#777">События отсутствуют</td></tr>'}</tbody>
     </table>
 
@@ -1093,6 +1142,10 @@
     const b64 = btoa(unescape(encodeURIComponent(JSON.stringify(pack))));
     const name = (invite ? 'Приглашение-арендодателю-' : 'АрендаЛог-копия-') + U.fmtDate(U.nowISO()).replace(/\./g, '-') + '.alog';
     const r = await Bridge.saveFile(name, b64, 'application/json');
+    if (r.ok && !invite) {
+      await DB.set('lastBackupAt', Date.now());
+      refreshBackupBanner();
+    }
     toast(r.ok ? 'Файл сохранён: ' + (r.path || name) : 'Ошибка: ' + r.error);
   }
 
@@ -1307,6 +1360,111 @@
     node.textContent = txt;
   }
 
+  /* ─────────────── Помощь: частые вопросы и условия ─────────────── */
+  const FAQ_ITEMS = [
+    ['Где хранятся мои записи?',
+      'Только в памяти приложения на этом телефоне. Они никуда не уходят, пока вы сами не сохраните копию или не подключите свой сервер.'],
+    ['Что будет, если телефон потеряется или его украдут?',
+      'Записи пропадут вместе с телефоном, если вы заранее не сохранили копию. Кнопка «Сохранить копию» создаёт файл — отправьте его себе в облако или мессенджер. На новом телефоне откройте этот файл, и всё вернётся.'],
+    ['Google восстановит данные при смене телефона?',
+      'Нет. Google может вернуть список приложений, но не содержимое журнала. Переносить нужно файлом копии.'],
+    ['Что такое «подтверждение времени»?',
+      'Независимый сервер времени ставит отметку, что запись существовала именно в этот момент. Благодаря этому нельзя утверждать, что вы дописали что-то задним числом.'],
+    ['Нужен ли интернет?',
+      'Нет. Записи, фото и подписи делаются без сети. Подтверждение времени добавится само, когда сеть появится.'],
+    ['Нужен ли сервер?',
+      'Нет. Приложение полностью работает на телефоне. Сервер нужен только для совместной работы в реальном времени — это необязательно.'],
+    ['Как показать записи арендодателю?',
+      'В разделе «Отчёт» есть «Приглашение арендодателю» — файл, который он откроет в приложении в режиме просмотра. Или отчёт в PDF.'],
+    ['Можно ли удалить запись?',
+      'Да, но цепочка пересчитается, и прежний корневой хеш перестанет совпадать с тем, что вы кому-то отправляли. Если запись ошибочна — лучше не удалять, а добавить уточнение.'],
+    ['Где фотографии? Их нет в галерее.',
+      'Фото хранятся внутри приложения и попадают в копию и в пакет доказательств. В галерею телефона они не дублируются.'],
+    ['Поможет ли это в суде?',
+      'Суд оценивает доказательства по своему внутреннему убеждению (статья 67 ГПК РФ). Приложение даёт датированные, подписанные и заверенные независимым временем записи — это сильнее скриншотов, но исход дела не гарантирует.']
+  ];
+
+  function showFaq() {
+    const wrap = el('div');
+    wrap.innerHTML = FAQ_ITEMS.map(function (qa) {
+      return '<details class="card" style="margin:0 0 8px"><summary><b>' + U.esc(qa[0]) + '</b></summary>' +
+        '<div class="muted small" style="margin-top:8px">' + U.esc(qa[1]) + '</div></details>';
+    }).join('');
+    openModal('Частые вопросы', wrap);
+  }
+
+  const TERMS_ITEMS = [
+    ['Кто мы', 'Приложение «АрендаЛог» — бесплатный инструмент для фиксации состояния жилья. Оно не является юридической услугой и не заменяет юриста.'],
+    ['Ваши данные', 'Все записи, фото и документы хранятся на вашем устройстве. Разработчик не имеет к ним доступа и не собирает персональные данные. Передача происходит только по вашему действию: при экспорте файла или подключении собственного сервера.'],
+    ['Ответственность за сохранность', 'Вы сами отвечаете за сохранность данных. Резервные копии не создаются автоматически. Потеря или поломка устройства означает потерю записей, если копия не была сохранена заранее.'],
+    ['Содержание записей', 'Вы отвечаете за достоверность вносимых сведений. Запрещено использовать приложение для фальсификации доказательств и незаконного наблюдения за людьми.'],
+    ['Никаких гарантий', 'Приложение предоставляется «как есть», без гарантий пригодности для конкретной цели. Мы не гарантируем, что суд или иной орган примет записи в качестве доказательства.'],
+    ['Пределы ответственности', 'Разработчик не возмещает убытки, возникшие из-за использования или невозможности использования приложения, в пределах, допускаемых законом.'],
+    ['Изменения', 'Условия могут меняться вместе с версиями приложения. Актуальная редакция всегда доступна в этом разделе.']
+  ];
+
+  function termsHtml() {
+    return TERMS_ITEMS.map(function (t) {
+      return '<div class="card" style="margin:0 0 8px"><b>' + U.esc(t[0]) + '</b>' +
+        '<div class="muted small" style="margin-top:6px">' + U.esc(t[1]) + '</div></div>';
+    }).join('') +
+      '<p class="muted small">Редакция от 29 октября 2026 года. Исходный код открыт — его можно проверить.</p>';
+  }
+
+  function showTerms() {
+    const wrap = el('div');
+    wrap.innerHTML = termsHtml();
+    openModal('Условия использования', wrap);
+  }
+
+  async function ensureTerms() {
+    const accepted = await DB.getSet('termsAccepted', 0);
+    if (accepted) return;
+    const wrap = el('div');
+    wrap.innerHTML = '<div class="card"><b>Перед началом работы</b>' +
+      '<div class="muted small" style="margin-top:6px">Ознакомьтесь с условиями использования — это коротко.</div></div>' +
+      termsHtml() +
+      '<button class="btn primary" id="tAccept">Принимаю</button>';
+    wrap.querySelector('#tAccept').addEventListener('click', async () => {
+      await DB.set('termsAccepted', Date.now());
+      closeModal();
+      toast('Условия приняты');
+    });
+    openModal('Условия использования', wrap);
+  }
+
+  /* ─────────────── Состояние подтверждения времени и напоминание о копии ─────────────── */
+  async function refreshTsaInfo() {
+    const node = $('#tsaInfo');
+    if (!node) return;
+    const total = state.events.length;
+    const done = state.events.filter(e => e.tsa).length;
+    node.textContent = total === 0
+      ? 'записей пока нет'
+      : (done === total ? `все ${total} записей подтверждены` : `${done} из ${total} подтверждено · ${total - done} ждут`);
+  }
+
+  async function refreshBackupBanner() {
+    const box = $('#backupBox');
+    if (!box) return;
+    const last = await DB.getSet('lastBackupAt', 0);
+    const days = last ? (Date.now() - last) / 86400000 : Infinity;
+    if (state.events.length < 3 || days < 14) { box.className = 'integrity hide'; box.innerHTML = ''; return; }
+    box.className = 'integrity';
+    box.style.background = 'rgba(255,159,67,.12)';
+    box.style.borderColor = 'rgba(255,159,67,.45)';
+    box.style.color = '#ffd9a8';
+    box.innerHTML = last
+      ? `Копия не сохранялась ${Math.floor(days)} дн. · <a href="#" id="bkGo" style="color:#fff;font-weight:700">сохранить</a>`
+      : 'Записи только на этом телефоне · <a href="#" id="bkGo" style="color:#fff;font-weight:700">сохранить копию</a>';
+    box.style.display = 'flex';
+    const go = box.querySelector('#bkGo');
+    if (go) go.addEventListener('click', async e => {
+      e.preventDefault();
+      await exportBackup(false);
+    });
+  }
+
   function renderObject() {
     const j = state.journal;
     $('#fTitle').value = j.title || '';
@@ -1468,6 +1626,8 @@
       $('#btnBackup').addEventListener('click', () => exportBackup(false));
       $('#btnImport').addEventListener('click', importBackup);
       $('#btnInvite').addEventListener('click', () => exportBackup(true));
+      $('#btnFaq').addEventListener('click', showFaq);
+      $('#btnTerms').addEventListener('click', showTerms);
       $('#btnPin').addEventListener('click', setPin);
       $('#btnReadOnly').addEventListener('click', async () => {
         state.readOnly = !state.readOnly;
@@ -1511,7 +1671,7 @@
     },
     loadAll, renderStats, renderTimeline, renderHandovers, renderObject, renderDeadlines,
     requirePin, showTab, toast, verifyChain, buildEvidencePackage, refreshVersionCard,
-    openModal, closeModal
+    openModal, closeModal, ensureTerms, refreshTsaInfo, refreshBackupBanner
   };
   global.UI = UI;
 })(window);

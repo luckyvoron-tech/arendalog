@@ -31,6 +31,7 @@
       await UI.loadAll();
       UI.renderHandovers();
       UI.showTab('home');
+      await UI.ensureTerms();
       // проверка обновлений — в фоне, не блокирует старт
       if (global.Update) setTimeout(() => global.Update.check(true).catch(() => {}), 1500);
 

@@ -107,6 +107,21 @@ class CDP {
   const tabs = await cdp.eval('document.querySelectorAll(".tab").length');
   check('навигация: 5 вкладок', tabs === 5, tabs);
 
+  // первый запуск: условия использования
+  let termsShown = false;
+  for (let i = 0; i < 24; i++) {
+    termsShown = await cdp.eval('!!document.querySelector("#tAccept")');
+    if (termsShown) break;
+    await sleep(250);
+  }
+  check('при первом запуске показаны условия', termsShown === true);
+  await cdp.eval('(() => { const b = document.querySelector("#tAccept"); if (b) b.click(); return true; })()');
+  await sleep(500);
+  const termsGone = await cdp.eval('!document.querySelector("#modal").classList.contains("open")');
+  check('условия принимаются и окно закрывается', termsGone === true);
+  const accepted = await cdp.eval('AL.DB.getSet("termsAccepted", 0).then(Boolean)');
+  check('факт принятия сохранён', accepted === true);
+
   console.log('\n[2] Ключ и цепочка');
   const key = await cdp.eval('(async()=>{const k=await AL.Crypto.ensureKeys();return k.pubHex.slice(0,12)})()');
   check('ключ подписи создан', typeof key === 'string' && key.length === 12, key);
@@ -321,6 +336,33 @@ class CDP {
   check('баннер обновления отрисован', bn.shown === true, banner);
   check('в баннере версия', /9\.9\.9/.test(bn.text || ''), bn.text);
   check('в баннере ссылка на APK', /ArendaLog\.apk/.test(bn.html || ''), bn.html);
+
+  console.log('\n[13] Помощь и условия');
+  await cdp.eval('UI.showTab("settings")');
+  await sleep(400);
+  await cdp.eval('document.querySelector("#btnFaq").click()');
+  await sleep(400);
+  const faqText = await cdp.eval('document.querySelector("#modalBody").textContent');
+  check('частые вопросы открываются', /Где хранятся мои записи/.test(faqText || ''), (faqText || '').slice(0, 60));
+  check('FAQ объясняет перенос на новый телефон', /копию/i.test(faqText || ''));
+  await cdp.eval('document.querySelector("#modalClose").click()');
+  await sleep(300);
+  await cdp.eval('document.querySelector("#btnTerms").click()');
+  await sleep(400);
+  const termsText = await cdp.eval('document.querySelector("#modalBody").textContent');
+  check('условия использования открываются', /Никаких гарантий|Ваши данные/.test(termsText || ''), (termsText || '').slice(0, 60));
+  await cdp.eval('document.querySelector("#modalClose").click()');
+
+  console.log('\n[14] Фото в чек-листе приёмки');
+  await cdp.eval('UI.showTab("handover")');
+  await sleep(400);
+  await cdp.eval('document.querySelector("[data-hv=\\"accept\\"]").click()');
+  await sleep(700);
+  const shots = await cdp.eval('document.querySelectorAll(".room .item .shotbtn").length');
+  check('у каждого пункта есть кнопка «Фото»', shots > 20, shots);
+  const slots = await cdp.eval('document.querySelectorAll(".room .item .item-shots").length');
+  check('у каждого пункта есть место под снимки', slots === shots, slots);
+  await cdp.eval('document.querySelector("#modalClose").click()');
 
   console.log('\n════════════════════════');
   console.log('Пройдено: ' + pass + ' · Провалено: ' + fail);

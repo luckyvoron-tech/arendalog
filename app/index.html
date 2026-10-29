@@ -28,6 +28,7 @@
     <!-- ───────────── Журнал ───────────── -->
     <section class="screen active" id="screen-home">
       <div class="integrity hide" id="updateBox"></div>
+      <div class="integrity hide" id="backupBox"></div>
       <div class="chips" id="filterChips">
         <button class="chip active" data-filter="all">Всё</button>
         <button class="chip" data-filter="defect">Проблемы</button>
@@ -136,15 +137,13 @@
         <div class="kv"><span>Фотографий</span><b id="stPhotos">0</b></div>
         <div class="kv"><span>Сумма улучшений</span><b id="stSum">0 ₽</b></div>
         <div class="kv"><span>Корневой хеш</span><b id="stRoot" class="mono small">—</b></div>
-        <div class="kv"><span>Подпись TSA</span><b id="stTsa">—</b></div>
+        <div class="kv"><span>Подтверждено временем</span><b id="stTsa">—</b></div>
       </div>
       <div class="grid2">
         <button class="btn primary" id="btnReport">Открыть отчёт</button>
         <button class="btn" id="btnPrint">Печать / PDF</button>
         <button class="btn" id="btnZip">Пакет доказательств (.zip)</button>
         <button class="btn" id="btnVerify">Проверить пакет</button>
-        <button class="btn" id="btnBackup">Резервная копия (.alog)</button>
-        <button class="btn" id="btnImport">Импорт копии</button>
         <button class="btn" id="btnInvite">Приглашение арендодателю</button>
       </div>
       <p class="muted small">Пакет .zip содержит отчёт, JSON всех событий, фотографии, документы и чеки, манифест с SHA-256, токены меток времени и страницу <b>verify.html</b> — по ней любое третье лицо проверит подлинность пакета в браузере, без установки приложения.</p>
@@ -154,38 +153,62 @@
     <section class="screen" id="screen-settings">
       <h2 class="h2">Настройки</h2>
 
+      <h2 class="h2">Сохранность данных</h2>
       <div class="card">
-        <div class="kv"><span>Устройство</span><b id="devId" class="mono small">—</b></div>
-        <div class="kv"><span>Ключ подписи</span><b id="keyInfo" class="small">—</b></div>
-        <div class="kv"><span>Цепочка</span><b id="chainInfo" class="small">—</b></div>
+        <button class="btn primary" id="btnBackup">Сохранить копию</button>
+        <button class="btn" id="btnImport" style="margin-top:8px">Загрузить копию</button>
+        <p class="muted small">Копия — один файл со всеми записями, фото и чеками. Отправьте его себе в облако или мессенджер: на новом телефоне достаточно открыть этот файл. Телефон может потеряться — копия останется.</p>
       </div>
 
-      <div class="card">
-        <label>Сервер меток времени (RFC 3161)
-          <input id="fTsa" placeholder="https://freetsa.org/tsr">
-        </label>
-        <div class="row2">
-          <button class="btn" id="btnTsaTest">Проверить TSA</button>
-          <button class="btn" id="btnTsaQueue">Отправить очередь</button>
-        </div>
-        <p class="muted small">Метка времени — независимое подтверждение, что файл существовал в указанный момент. Без интернета события подписываются локально и уходят в очередь.</p>
-      </div>
-
+      <h2 class="h2">Защита</h2>
       <div class="card">
         <label>PIN-код для входа (4–8 цифр)
           <input id="fPin" type="password" inputmode="numeric" placeholder="не задан">
         </label>
         <button class="btn" id="btnPin">Установить PIN</button>
+        <p class="muted small">Если телефон попадёт в чужие руки, журнал не откроется без кода.</p>
       </div>
 
+      <h2 class="h2">Подтверждение времени</h2>
       <div class="card">
+        <div class="kv"><span>Состояние</span><b id="tsaInfo" class="small">—</b></div>
+        <button class="btn" id="btnTsaQueue">Подтвердить сейчас</button>
+        <p class="muted small">Дата записи заверяется сервером времени — так никто не сможет сказать, что запись сделана задним числом. Обычно всё происходит само; кнопка нужна, если долго не было интернета.</p>
+        <details>
+          <summary class="muted small" style="cursor:pointer;padding:6px 0">Подробности и обслуживание</summary>
+          <div class="kv"><span>Устройство</span><b id="devId" class="mono small">—</b></div>
+          <div class="kv"><span>Ключ подписи</span><b id="keyInfo" class="small">—</b></div>
+          <div class="kv"><span>Цепочка записей</span><b id="chainInfo" class="small">—</b></div>
+          <label>Адрес сервера времени
+            <input id="fTsa" placeholder="https://freetsa.org/tsr">
+          </label>
+          <button class="btn" id="btnTsaTest">Проверить сервер времени</button>
+        </details>
+      </div>
+
+      <h2 class="h2">Помощь</h2>
+      <div class="card">
+        <button class="btn" id="btnFaq">Частые вопросы</button>
+        <button class="btn" id="btnTerms" style="margin-top:8px">Условия использования</button>
+      </div>
+
+      <h2 class="h2">Ещё</h2>
+      <div class="card">
+        <div class="kv"><span>Версия</span><b id="verInfo">—</b></div>
+        <button class="btn" id="btnCheckUpdate">Проверить обновления</button>
+        <button class="btn" id="btnDiag" style="margin-top:8px">Диагностика связи</button>
+      </div>
+
+      <details class="card">
+        <summary><b>Для продвинутых</b></summary>
+        <p class="muted small" style="margin-top:8px">Здесь то, без чего приложение полностью работает. Трогайте, только если понимаете зачем.</p>
+
         <div class="kv"><span>Режим просмотра</span><b id="roInfo">выключен</b></div>
-        <button class="btn" id="btnReadOnly">Включить режим арендодателя</button>
-        <p class="muted small">В этом режиме редактирование заблокировано — удобно передать телефон для просмотра или открыть копию журнала, полученную от арендатора.</p>
-      </div>
+        <button class="btn" id="btnReadOnly">Включить режим просмотра</button>
+        <p class="muted small">Блокирует изменения — на случай, когда телефон передают посмотреть другому человеку.</p>
 
-      <h2 class="h2">Общий доступ</h2>
-      <div class="card">
+        <hr style="border:none;border-top:1px solid #2a323d;margin:14px 0">
+
         <div class="kv"><span>Сервер</span><b id="syncState">не подключён</b></div>
         <label>Адрес сервера
           <input id="fServer" placeholder="https://sync.example.ru">
@@ -202,17 +225,13 @@
           <button class="btn" id="btnInvite2">Пригласить арендодателя</button>
           <button class="btn" id="btnInviteCo">Пригласить проживающего</button>
         </div>
-        <p class="muted small">Арендодатель получает доступ «только чтение» и видит журнал в реальном времени. Проживающие могут добавлять записи наравне с арендатором. Без сервера приложение работает полностью офлайн.</p>
-      </div>
+        <p class="muted small">Только если у вас есть собственный сервер. Без него всё работает: записи на телефоне, арендодателю передаётся файл.</p>
 
-      <div class="card danger">
+        <hr style="border:none;border-top:1px solid #2a323d;margin:14px 0">
+
         <button class="btn danger" id="btnWipe">Удалить все данные</button>
-      </div>
-      <div class="card">
-        <div class="kv"><span>Версия</span><b id="verInfo">—</b></div>
-        <button class="btn" id="btnCheckUpdate">Проверить обновления</button>
-        <button class="btn" id="btnDiag" style="margin-top:8px">Диагностика связи</button>
-      </div>
+      </details>
+
       <p class="muted small center">АрендаЛог · офлайн-приложение с открытым кодом</p>
     </section>
 

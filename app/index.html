@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0e1116">
+<title>АрендаЛог — журнал аренды</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+
+<div id="app">
+
+  <!-- ───────────── Шапка ───────────── -->
+  <header class="topbar">
+    <div class="topbar-title">
+      <div class="logo">А</div>
+      <div>
+        <div class="t1" id="objTitle">АрендаЛог</div>
+        <div class="t2" id="objSub">журнал аренды и доказательства</div>
+      </div>
+    </div>
+    <button class="iconbtn" id="btnLock" title="Заблокировать">🔒</button>
+  </header>
+
+  <main id="screens">
+
+    <!-- ───────────── Журнал ───────────── -->
+    <section class="screen active" id="screen-home">
+      <div class="chips" id="filterChips">
+        <button class="chip active" data-filter="all">Всё</button>
+        <button class="chip" data-filter="defect">Проблемы</button>
+        <button class="chip" data-filter="improvement">Улучшения</button>
+        <button class="chip" data-filter="receipt">Чеки</button>
+        <button class="chip" data-filter="payment">Платежи</button>
+        <button class="chip" data-filter="meter">Счётчики</button>
+        <button class="chip" data-filter="notice">Уведомления</button>
+      </div>
+      <div class="integrity" id="integrityBox"></div>
+      <div id="timeline" class="timeline"></div>
+      <div class="empty" id="timelineEmpty">
+        <div class="empty-ico">📋</div>
+        <div>Пока пусто. Добавьте первый факт: дефект, улучшение, платёж или показания счётчика.</div>
+      </div>
+      <div class="fab" id="fabAdd">+</div>
+    </section>
+
+    <!-- ───────────── Объект ───────────── -->
+    <section class="screen" id="screen-object">
+      <h2 class="h2">Объект и договор</h2>
+      <form class="card" id="objForm">
+        <label>Название журнала
+          <input id="fTitle" placeholder="Дом в СНТ «Восток», 27А">
+        </label>
+        <label>Адрес
+          <input id="fAddress" placeholder="Сочи, с. Веселое, СНТ «Восток», 27А">
+        </label>
+        <div class="row2">
+          <label>Арендатор
+            <input id="fTenant" placeholder="Фамилия И. О.">
+          </label>
+          <label>Арендодатель
+            <input id="fLandlord" placeholder="Фамилия И. О.">
+          </label>
+        </div>
+        <div class="row2">
+          <label>Телефон арендодателя
+            <input id="fLandlordPhone" type="tel" placeholder="+7 …">
+          </label>
+          <label>Залог, ₽
+            <input id="fDeposit" type="number" inputmode="numeric" placeholder="50000">
+          </label>
+        </div>
+        <div class="row2">
+          <label>Аренда с
+            <input id="fStart" type="date">
+          </label>
+          <label>по
+            <input id="fEnd" type="date">
+          </label>
+        </div>
+        <label>Аренда в месяц, ₽
+          <input id="fRent" type="number" inputmode="numeric" placeholder="80000">
+        </label>
+        <button class="btn primary" type="submit">Сохранить</button>
+      </form>
+
+      <h2 class="h2">Зоны и комнаты</h2>
+      <div class="card">
+        <div id="zonesList"></div>
+        <div class="grid2" style="margin-top:10px">
+          <button class="btn" id="btnAddZone">Добавить зону</button>
+          <button class="btn" id="btnZoneTpl">Шаблоны</button>
+        </div>
+        <p class="muted small">Этот список используется при приёмке и сдаче. Можно описать нетиповые зоны: мангальная зона, столовая, второй санузел, лестница, кладовая.</p>
+      </div>
+
+      <h2 class="h2">Кто проживает</h2>
+      <div class="card">
+        <div id="peopleList"></div>
+        <button class="btn" id="btnAddPerson" style="margin-top:10px">Добавить человека</button>
+        <p class="muted small">Список попадает в акт приёмки. Роли: арендатор, супруг(а), ребёнок, родственник, друг, арендодатель. Доступ к приложению выдаётся отдельно — приглашением.</p>
+      </div>
+
+      <h2 class="h2">Быстрые действия</h2>
+      <div class="grid2">
+        <button class="tile" data-go="handover-accept">Принять объект<small>чек-лист при заселении</small></button>
+        <button class="tile" data-go="handover-return">Сдать объект<small>чек-лист при выезде</small></button>
+        <button class="tile" data-go="add-defect">Зафиксировать дефект<small>фото + время</small></button>
+        <button class="tile" data-go="add-improvement">Зафиксировать улучшение<small>чеки и суммы</small></button>
+      </div>
+
+      <h2 class="h2">Сроки</h2>
+      <div class="card" id="deadlines"></div>
+    </section>
+
+    <!-- ───────────── Приёмка ───────────── -->
+    <section class="screen" id="screen-handover">
+      <h2 class="h2" id="handoverTitle">Приёмка / сдача объекта</h2>
+      <div class="card" id="handoverIntro">
+        <p class="muted">Пройдите по комнатам и отметьте состояние. Каждый пункт можно сфотографировать. По итогам формируется акт с подписями и хешем.</p>
+        <div class="grid2">
+          <button class="btn" data-hv="accept">Приёмка при заселении</button>
+          <button class="btn" data-hv="return">Сдача при выезде</button>
+        </div>
+      </div>
+      <div id="handoverBody"></div>
+    </section>
+
+    <!-- ───────────── Отчёт ───────────── -->
+    <section class="screen" id="screen-report">
+      <h2 class="h2">Отчёт и доказательства</h2>
+      <div class="card">
+        <div class="kv"><span>Событий</span><b id="stEvents">0</b></div>
+        <div class="kv"><span>Фотографий</span><b id="stPhotos">0</b></div>
+        <div class="kv"><span>Сумма улучшений</span><b id="stSum">0 ₽</b></div>
+        <div class="kv"><span>Корневой хеш</span><b id="stRoot" class="mono small">—</b></div>
+        <div class="kv"><span>Подпись TSA</span><b id="stTsa">—</b></div>
+      </div>
+      <div class="grid2">
+        <button class="btn primary" id="btnReport">Открыть отчёт</button>
+        <button class="btn" id="btnPrint">Печать / PDF</button>
+        <button class="btn" id="btnZip">Пакет доказательств (.zip)</button>
+        <button class="btn" id="btnVerify">Проверить пакет</button>
+        <button class="btn" id="btnBackup">Резервная копия (.alog)</button>
+        <button class="btn" id="btnImport">Импорт копии</button>
+        <button class="btn" id="btnInvite">Приглашение арендодателю</button>
+      </div>
+      <p class="muted small">Пакет .zip содержит отчёт, JSON всех событий, фотографии, документы и чеки, манифест с SHA-256, токены меток времени и страницу <b>verify.html</b> — по ней любое третье лицо проверит подлинность пакета в браузере, без установки приложения.</p>
+    </section>
+
+    <!-- ───────────── Настройки ───────────── -->
+    <section class="screen" id="screen-settings">
+      <h2 class="h2">Настройки</h2>
+
+      <div class="card">
+        <div class="kv"><span>Устройство</span><b id="devId" class="mono small">—</b></div>
+        <div class="kv"><span>Ключ подписи</span><b id="keyInfo" class="small">—</b></div>
+        <div class="kv"><span>Цепочка</span><b id="chainInfo" class="small">—</b></div>
+      </div>
+
+      <div class="card">
+        <label>Сервер меток времени (RFC 3161)
+          <input id="fTsa" placeholder="https://freetsa.org/tsr">
+        </label>
+        <div class="row2">
+          <button class="btn" id="btnTsaTest">Проверить TSA</button>
+          <button class="btn" id="btnTsaQueue">Отправить очередь</button>
+        </div>
+        <p class="muted small">Метка времени — независимое подтверждение, что файл существовал в указанный момент. Без интернета события подписываются локально и уходят в очередь.</p>
+      </div>
+
+      <div class="card">
+        <label>PIN-код для входа (4–8 цифр)
+          <input id="fPin" type="password" inputmode="numeric" placeholder="не задан">
+        </label>
+        <button class="btn" id="btnPin">Установить PIN</button>
+      </div>
+
+      <div class="card">
+        <div class="kv"><span>Режим просмотра</span><b id="roInfo">выключен</b></div>
+        <button class="btn" id="btnReadOnly">Включить режим арендодателя</button>
+        <p class="muted small">В этом режиме редактирование заблокировано — удобно передать телефон для просмотра или открыть копию журнала, полученную от арендатора.</p>
+      </div>
+
+      <h2 class="h2">Общий доступ</h2>
+      <div class="card">
+        <div class="kv"><span>Сервер</span><b id="syncState">не подключён</b></div>
+        <label>Адрес сервера
+          <input id="fServer" placeholder="https://sync.example.ru">
+        </label>
+        <div class="grid2">
+          <button class="btn" id="btnSpaceCreate">Создать пространство</button>
+          <button class="btn" id="btnJoin">Войти по коду</button>
+        </div>
+        <div class="grid2">
+          <button class="btn" id="btnSyncNow">Синхронизировать</button>
+          <button class="btn" id="btnLive">Следить в реальном времени</button>
+        </div>
+        <div class="grid2">
+          <button class="btn" id="btnInvite2">Пригласить арендодателя</button>
+          <button class="btn" id="btnInviteCo">Пригласить проживающего</button>
+        </div>
+        <p class="muted small">Арендодатель получает доступ «только чтение» и видит журнал в реальном времени. Проживающие могут добавлять записи наравне с арендатором. Без сервера приложение работает полностью офлайн.</p>
+      </div>
+
+      <div class="card danger">
+        <button class="btn danger" id="btnWipe">Удалить все данные</button>
+      </div>
+      <p class="muted small center">АрендаЛог · версия 1.0 · офлайн-приложение</p>
+    </section>
+
+  </main>
+
+  <nav class="tabbar">
+    <button class="tab active" data-tab="home"><span>📋</span>Журнал</button>
+    <button class="tab" data-tab="object"><span>🏠</span>Объект</button>
+    <button class="tab" data-tab="handover"><span>✅</span>Приёмка</button>
+    <button class="tab" data-tab="report"><span>🧾</span>Отчёт</button>
+    <button class="tab" data-tab="settings"><span>⚙️</span>Ещё</button>
+  </nav>
+</div>
+
+<!-- ───────────── Модальное окно ───────────── -->
+<div class="modal" id="modal">
+  <div class="modal-sheet" id="modalSheet">
+    <div class="modal-head">
+      <b id="modalTitle">Событие</b>
+      <button class="iconbtn" id="modalClose">✕</button>
+    </div>
+    <div class="modal-body" id="modalBody"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="js/verifier-data.js"></script>
+<script src="js/core.js"></script>
+<script src="js/sync.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>

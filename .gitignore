@@ -1,0 +1,16 @@
+# артефакты сборки и секреты
+dist/*.apk
+dist/*.keystore
+*.keystore
+*.tmp
+
+# временные данные сервера
+server/data/
+data/
+
+# зависимости и загрузки тулчейна
+node_modules/
+tools/downloads/
+
+# внутренние заметки
+_agent/

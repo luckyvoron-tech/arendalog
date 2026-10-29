@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>АрендаЛог — проверка пакета доказательств</title>
+<style>
+  :root { --bg:#0e1116; --card:#1a2027; --line:#2a323d; --txt:#e8edf3; --muted:#8d99a8; --ok:#2fbf71; --bad:#ef5b5b; --warn:#f0b429; --accent:#4c8dff; }
+  * { box-sizing:border-box; }
+  body { margin:0; padding:18px; background:var(--bg); color:var(--txt); font:15px/1.5 -apple-system,"Segoe UI",Roboto,sans-serif; }
+  .wrap { max-width:920px; margin:0 auto; }
+  h1 { font-size:20px; margin:0 0 6px; }
+  .sub { color:var(--muted); font-size:13px; margin-bottom:18px; }
+  .drop { border:2px dashed var(--line); border-radius:16px; padding:34px 20px; text-align:center; color:var(--muted); cursor:pointer; transition:.15s; }
+  .drop:hover, .drop.over { border-color:var(--accent); color:#cfe0ff; background:rgba(76,141,255,.06); }
+  .drop b { color:var(--txt); display:block; margin-bottom:6px; font-size:16px; }
+  input[type=file] { display:none; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:16px; margin-top:16px; }
+  .verdict { display:flex; align-items:center; gap:12px; font-size:17px; font-weight:700; }
+  .dot { width:14px; height:14px; border-radius:50%; flex:0 0 14px; }
+  .ok { color:#a9e8c4; } .ok .dot { background:var(--ok); }
+  .bad { color:#ffb3b3; } .bad .dot { background:var(--bad); }
+  .warn { color:#f3d38a; } .warn .dot { background:var(--warn); }
+  .kv { display:flex; justify-content:space-between; gap:14px; padding:7px 0; border-bottom:1px dashed rgba(255,255,255,.07); font-size:13.5px; }
+  .kv:last-child { border-bottom:0; }
+  .kv span { color:var(--muted); } .kv b { text-align:right; }
+  .mono { font-family:ui-monospace,Consolas,monospace; font-size:12px; word-break:break-all; }
+  table { width:100%; border-collapse:collapse; font-size:12.5px; margin-top:10px; }
+  th,td { border:1px solid var(--line); padding:6px 8px; text-align:left; vertical-align:top; }
+  th { background:#202832; color:var(--muted); font-weight:600; }
+  .tag { font-size:11px; padding:2px 7px; border-radius:6px; border:1px solid var(--line); white-space:nowrap; }
+  .tag.ok { border-color:rgba(47,191,113,.45); background:rgba(47,191,113,.12); }
+  .tag.bad { border-color:rgba(239,91,91,.45); background:rgba(239,91,91,.12); }
+  .tag.warn { border-color:rgba(240,180,41,.45); background:rgba(240,180,41,.12); }
+  ul.problems { margin:10px 0 0; padding-left:20px; color:#ffb3b3; font-size:13px; }
+  .hint { color:var(--muted); font-size:12.5px; margin-top:14px; }
+  .hide { display:none; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Проверка пакета доказательств «АрендаЛог»</h1>
+  <div class="sub">Выберите архив <b>.zip</b>, сформированный приложением. Проверка идёт полностью в браузере:
+    файлы никуда не отправляются. Нужен только этот файл — приложение и интернет не требуются.</div>
+
+  <label class="drop" id="drop" for="fileInput">
+    <b>Перетащите архив сюда или нажмите</b>
+    <span>пакет содержит report.html, journal.json, manifest.json, photos/, docs/, timestamps/</span>
+  </label>
+  <input type="file" id="fileInput" accept=".zip,application/zip">
+
+  <div id="result"></div>
+
+  <div class="hint">
+    Что проверяется: целостность каждого файла по SHA-256 из манифеста, непрерывность хеш-цепочки событий,
+    электронные подписи ECDSA P-256 открытым ключом из манифеста, соответствие токенов меток времени
+    (RFC 3161) хешам событий. Метка времени подтверждает, что запись существовала не позже указанного момента.
+  </div>
+</div>
+
+<script>
+'use strict';
+
+/* ─────────── канонический JSON: должен совпадать с приложением ─────────── */
+function canonical(v) {
+  if (v === null || typeof v !== 'object') return JSON.stringify(v);
+  if (Array.isArray(v)) return '[' + v.map(canonical).join(',') + ']';
+  const keys = Object.keys(v).filter(k => v[k] !== undefined).sort();
+  return '{' + keys.map(k => JSON.stringify(k) + ':' + canonical(v[k])).join(',') + '}';
+}
+function hex(b) { return Array.from(new Uint8Array(b), x => x.toString(16).padStart(2, '0')).join(''); }
+async function sha256Hex(data) {
+  const buf = typeof data === 'string' ? new TextEncoder().encode(data) : data;
+  return hex(await crypto.subtle.digest('SHA-256', buf));
+}
+function b64ToBytes(b64) {
+  const s = atob(b64);
+  const out = new Uint8Array(s.length);
+  for (let i = 0; i < s.length; i++) out[i] = s.charCodeAt(i);
+  return out;
+}
+const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const fmt = iso => {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (isNaN(d)) return '—';
+  const p = n => String(n).padStart(2, '0');
+  return `${p(d.getDate())}.${p(d.getMonth() + 1)}.${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}`;
+};
+
+/* ─────────── чтение ZIP (stored + deflate) ─────────── */
+async function readZip(buffer) {
+  const u8 = new Uint8Array(buffer);
+  const dv = new DataView(buffer);
+  let eocd = -1;
+  for (let i = u8.length - 22; i >= Math.max(0, u8.length - 66000); i--) {
+    if (dv.getUint32(i, true) === 0x06054b50) { eocd = i; break; }
+  }
+  if (eocd < 0) throw new Error('это не ZIP-архив');
+  const count = dv.getUint16(eocd + 10, true);
+  const cdOffset = dv.getUint32(eocd + 16, true);
+  const entries = [];
+  let p = cdOffset;
+  for (let i = 0; i < count; i++) {
+    if (dv.getUint32(p, true) !== 0x02014b50) break;
+    const method = dv.getUint16(p + 10, true);
+    const crc = dv.getUint32(p + 16, true);
+    const csize = dv.getUint32(p + 20, true);
+    const usize = dv.getUint32(p + 24, true);
+    const nameLen = dv.getUint16(p + 28, true);
+    const extraLen = dv.getUint16(p + 30, true);
+    const commentLen = dv.getUint16(p + 32, true);
+    const localOff = dv.getUint32(p + 42, true);
+    const name = new TextDecoder('utf-8').decode(u8.subarray(p + 46, p + 46 + nameLen));
+    entries.push({ name, method, csize, usize, crc, localOff });
+    p += 46 + nameLen + extraLen + commentLen;
+  }
+  const files = {};
+  for (const e of entries) {
+    if (e.name.endsWith('/')) continue;
+    const lh = e.localOff;
+    if (dv.getUint32(lh, true) !== 0x04034b50) continue;
+    const nameLen = dv.getUint16(lh + 26, true);
+    const extraLen = dv.getUint16(lh + 28, true);
+    const start = lh + 30 + nameLen + extraLen;
+    const raw = u8.subarray(start, start + e.csize);
+    let data;
+    if (e.method === 0) {
+      data = raw;
+    } else if (e.method === 8) {
+      const ds = new DecompressionStream('deflate-raw');
+      const stream = new Blob([raw]).stream().pipeThrough(ds);
+      data = new Uint8Array(await new Response(stream).arrayBuffer());
+    } else {
+      throw new Error('неподдерживаемое сжатие: ' + e.method);
+    }
+    files[e.name] = data;
+  }
+  return files;
+}
+
+/* ─────────── проверка ─────────── */
+async function verify(files) {
+  const problems = [];
+  const warnings = [];
+  const out = { problems, warnings, events: [], files: [] };
+
+  const dec = b => new TextDecoder('utf-8').decode(b);
+  if (!files['manifest.json']) throw new Error('в архиве нет manifest.json');
+  if (!files['journal.json']) throw new Error('в архиве нет journal.json');
+
+  const manifest = JSON.parse(dec(files['manifest.json']));
+  const journal = JSON.parse(dec(files['journal.json']));
+  out.manifest = manifest;
+  out.journal = journal;
+
+  /* 1. файлы по манифесту */
+  for (const f of manifest.files || []) {
+    const data = files[f.name];
+    if (!data) { problems.push('файл отсутствует: ' + f.name); out.files.push({ name: f.name, ok: false, note: 'нет в архиве' }); continue; }
+    const h = await sha256Hex(data);
+    const ok = h === f.sha256;
+    out.files.push({ name: f.name, ok, note: ok ? 'совпадает' : 'хеш не совпадает' });
+    if (!ok) problems.push('файл изменён: ' + f.name);
+  }
+  const listed = new Set((manifest.files || []).map(f => f.name));
+  for (const n of Object.keys(files)) {
+    if (['manifest.json', 'verify.html'].includes(n)) continue;
+    if (!listed.has(n)) warnings.push('файл не указан в манифесте: ' + n);
+  }
+
+  /* 2. цепочка и подписи */
+  const events = (journal.events || []).slice().sort((a, b) => a.seq - b.seq);
+  if (!events.length) warnings.push('в журнале нет событий');
+  let key = null;
+  if (manifest.publicKeyJwk) {
+    try {
+      key = await crypto.subtle.importKey('jwk', manifest.publicKeyJwk, { name: 'ECDSA', namedCurve: 'P-256' }, false, ['verify']);
+    } catch (e) { problems.push('открытый ключ в манифесте повреждён'); }
+  } else {
+    problems.push('в манифесте нет открытого ключа — подписи проверить нельзя');
+  }
+  let prev = '';
+  const myAuthor = manifest.authorId || null;
+  const groups = new Map();
+  for (const ev of events) {
+    const key = (!ev.authorId || ev.authorId === myAuthor) ? 'local' : ev.authorId;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(ev);
+  }
+  const roots = {};
+  for (const [author, list] of groups) {
+    list.sort((a, b) => (a.seq || 0) - (b.seq || 0));
+    prev = '';
+    for (const ev of list) {
+      const rec = { seq: ev.seq, type: ev.type, title: ev.title, ts: ev.tsDevice, tsa: ev.tsa ? ev.tsa.time : null, ok: true, note: '' };
+      const base = {
+        journalId: ev.journalId, seq: ev.seq, type: ev.type, title: ev.title || '',
+        note: ev.note || '', amount: ev.amount || 0, room: ev.room || '',
+        severity: ev.severity || '', tsDevice: ev.tsDevice,
+        photos: (ev.photos || []).slice(), meta: ev.meta || null
+      };
+      if (ev.authorId) base.authorId = ev.authorId;
+      const expect = await sha256Hex(canonical(Object.assign({}, base, { prevHash: ev.prevHash || '' })));
+      if ((ev.prevHash || '') !== prev) { rec.ok = false; rec.note = 'разрыв цепочки'; problems.push('событие #' + ev.seq + ': разрыв цепочки'); }
+      else if (expect !== ev.hash) { rec.ok = false; rec.note = 'хеш не совпадает'; problems.push('событие #' + ev.seq + ': содержимое изменено'); }
+      else if (key) {
+        let okSig = false;
+        try {
+          okSig = await crypto.subtle.verify({ name: 'ECDSA', hash: 'SHA-256' }, key,
+            b64ToBytes(ev.sig), hexToBytes(ev.hash));
+        } catch (e) { okSig = false; }
+        if (!okSig) { rec.ok = false; rec.note = 'подпись неверна'; problems.push('событие #' + ev.seq + ': подпись неверна'); }
+      }
+      if (rec.ok && !ev.tsa) { rec.note = 'без метки времени'; warnings.push('событие #' + ev.seq + ': нет метки времени'); }
+
+      /* 3. метка времени: токен должен содержать хеш события */
+      if (ev.tsa && ev.tsa.token) {
+        const token = b64ToBytes(ev.tsa.token);
+        const needle = ev.hash;
+        let found = false;
+        for (let i = 0; i + 34 <= token.length; i++) {
+          if (token[i] === 0x04 && token[i + 1] === 0x20) {
+            let s = '';
+            for (let j = 0; j < 32; j++) s += token[i + 2 + j].toString(16).padStart(2, '0');
+            if (s === needle) { found = true; break; }
+          }
+        }
+        if (!found) { warnings.push('событие #' + ev.seq + ': в токене не найден отпечаток (проверьте на сервере TSA)'); }
+        const tsr = files['timestamps/' + ev.id + '.tsr'];
+        if (!tsr) warnings.push('событие #' + ev.seq + ': токен .tsr отсутствует в архиве');
+      }
+      prev = expect === ev.hash ? ev.hash : prev;
+      out.events.push(rec);
+    }
+    if (prev) roots[author] = prev;
+  }
+  const rootKeys = Object.keys(roots).sort();
+  const rootJoined = rootKeys.map(k => roots[k]).join(':');
+
+  out.rootOk = manifest.rootHash === rootJoined;
+  if (manifest.rootHash && !out.rootOk) problems.push('корневой хеш не совпадает с цепочкой');
+  return out;
+}
+
+function hexToBytes(h) {
+  const out = new Uint8Array(h.length / 2);
+  for (let i = 0; i < out.length; i++) out[i] = parseInt(h.substr(i * 2, 2), 16);
+  return out;
+}
+
+/* ─────────── интерфейс ─────────── */
+const el = id => document.getElementById(id);
+const drop = el('drop'), input = el('fileInput'), result = el('result');
+
+async function handleFile(file) {
+  result.innerHTML = '<div class="card">Проверяю…</div>';
+  try {
+    const buf = await file.arrayBuffer();
+    const files = await readZip(buf);
+    const r = await verify(files);
+    render(r, file.name);
+  } catch (e) {
+    result.innerHTML = '<div class="card"><div class="verdict bad"><span class="dot"></span>Не удалось проверить</div>' +
+      '<p class="mono">' + esc(e.message) + '</p></div>';
+  }
+}
+
+function render(r, fileName) {
+  const okAll = r.problems.length === 0;
+  const evOk = r.events.filter(e => e.ok).length;
+  const stamped = r.events.filter(e => e.tsa).length;
+  const j = r.journal.journal || {};
+  const filesOk = r.files.filter(f => f.ok).length;
+
+  let html = '<div class="card">';
+  html += '<div class="verdict ' + (okAll ? 'ok' : 'bad') + '"><span class="dot"></span>' +
+    (okAll ? 'Пакет подлинный и не изменён' : 'Обнаружены расхождения') + '</div>';
+  html += '<div class="kv"><span>Архив</span><b>' + esc(fileName) + '</b></div>';
+  html += '<div class="kv"><span>Объект</span><b>' + esc(j.address || j.title || '—') + '</b></div>';
+  html += '<div class="kv"><span>Арендатор</span><b>' + esc(j.tenant || '—') + '</b></div>';
+  html += '<div class="kv"><span>Арендодатель</span><b>' + esc(j.landlord || '—') + '</b></div>';
+  html += '<div class="kv"><span>Событий проверено</span><b>' + evOk + ' из ' + r.events.length + '</b></div>';
+  html += '<div class="kv"><span>С меткой времени</span><b>' + stamped + '</b></div>';
+  html += '<div class="kv"><span>Файлов сверено</span><b>' + filesOk + ' из ' + r.files.length + '</b></div>';
+  html += '<div class="kv"><span>Корневой хеш</span><b class="mono">' + esc((r.manifest.rootHash || '—').slice(0, 32)) + '…</b></div>';
+  html += '<div class="kv"><span>Отпечаток ключа</span><b class="mono">' + esc((r.manifest.keyFingerprint || '—').slice(0, 32)) + '…</b></div>';
+  html += '</div>';
+
+  if (r.problems.length) {
+    html += '<div class="card"><b>Расхождения</b><ul class="problems">' +
+      r.problems.map(p => '<li>' + esc(p) + '</li>').join('') + '</ul></div>';
+  }
+  if (r.warnings.length) {
+    html += '<div class="card"><b>Замечания</b><div class="hint" style="margin-top:8px">' +
+      r.warnings.map(w => '• ' + esc(w)).join('<br>') + '</div></div>';
+  }
+
+  html += '<div class="card"><b>События</b><table><thead><tr>' +
+    '<th>№</th><th>Тип</th><th>Содержание</th><th>Время устройства</th><th>Метка времени</th><th>Проверка</th>' +
+    '</tr></thead><tbody>';
+  for (const e of r.events) {
+    html += '<tr><td>' + e.seq + '</td><td>' + esc(e.type) + '</td><td>' + esc(e.title) + '</td>' +
+      '<td style="white-space:nowrap">' + fmt(e.ts) + '</td>' +
+      '<td style="white-space:nowrap">' + (e.tsa ? fmt(e.tsa) : '—') + '</td>' +
+      '<td><span class="tag ' + (e.ok ? 'ok' : 'bad') + '">' + esc(e.note || 'ок') + '</span></td></tr>';
+  }
+  html += '</tbody></table></div>';
+
+  html += '<div class="card"><b>Файлы</b><table><thead><tr><th>Файл</th><th>Результат</th></tr></thead><tbody>' +
+    r.files.map(f => '<tr><td class="mono">' + esc(f.name) + '</td><td><span class="tag ' + (f.ok ? 'ok' : 'bad') + '">' + esc(f.note) + '</span></td></tr>').join('') +
+    '</tbody></table></div>';
+
+  result.innerHTML = html;
+}
+
+drop.addEventListener('click', () => input.click());
+drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('over'); });
+drop.addEventListener('dragleave', () => drop.classList.remove('over'));
+drop.addEventListener('drop', e => {
+  e.preventDefault(); drop.classList.remove('over');
+  const f = e.dataTransfer.files && e.dataTransfer.files[0];
+  if (f) handleFile(f);
+});
+input.addEventListener('change', () => {
+  const f = input.files && input.files[0];
+  if (f) handleFile(f);
+});
+</script>
+</body>
+</html>

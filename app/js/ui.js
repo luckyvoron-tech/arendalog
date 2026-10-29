@@ -961,6 +961,42 @@
     openModal('Проверка пакета', wrap);
   }
 
+  /* отчёт + договор одним PDF: печать объединённого документа */
+  async function buildReportWithContract() {
+    const res = await verifyChain();
+    const kp = await Crypto.ensureKeys();
+    let html = buildReportHtml({ root: res.ok ? res.root : 'НАРУШЕНА', keyHex: kp.pubHex });
+    const ids = contractIds();
+    if (!ids.length) return html;
+    let pages = '';
+    let counter = 0;
+    for (const pid of ids) {
+      const p = state.photos[pid];
+      if (!p) continue;
+      if (!/^image\//.test(p.mime || '')) {
+        pages += '<p style="font-size:9pt">Приложенный файл: ' + U.esc(p.name || 'документ') +
+          ' — в пакете доказательств (.zip)</p>';
+        continue;
+      }
+      const b64 = await blobToB64(p.blob);
+      counter++;
+      pages += '<div style="page-break-inside:avoid;margin-bottom:4mm">' +
+        '<img src="data:' + (p.mime || 'image/jpeg') + ';base64,' + b64 + '" style="width:100%;display:block">' +
+        '<div style="font-size:8pt;color:#555;text-align:center">стр. ' + counter + '</div></div>';
+    }
+    if (!pages) return html;
+    return html.replace('</body>',
+      '<div style="page-break-before:always"></div><h2>Приложение. Договор аренды</h2>' +
+      '<p style="font-size:8pt;color:#555">Страниц: ' + counter + '</p>' + pages + '</body>');
+  }
+
+  async function printWithContract() {
+    const html = await buildReportWithContract();
+    preparePrintArea(html);
+    Bridge.print();
+    toast('В окне печати выберите «Сохранить как PDF»');
+  }
+
   async function showReport(autoPrint) {
     const res = await verifyChain();
     const kp = await Crypto.ensureKeys();
@@ -1220,7 +1256,7 @@
         <input id="zName" value="${U.esc(z.name)}" placeholder="Мангальная зона">
       </label>
       <label>Описание (необязательно)
-        <input id="zNote" value="${U.esc(z.note || '')}" placeholder="Зона во дворе: мангал, стол, навес">
+        <input id="zNote" value="${U.esc(z.note || '')}" placeholder="Кратко: где находится, на что смотреть">
       </label>
       <label>Пункты для приёмки — по одному в строке
         <textarea id="zItems" style="min-height:150px">${U.esc((z.items || []).join('\n'))}</textarea>
@@ -1716,6 +1752,7 @@
 
       $('#btnReport').addEventListener('click', () => showReport(false));
       $('#btnPrint').addEventListener('click', () => showReport(true));
+      $('#btnPrintAll').addEventListener('click', printWithContract);
       $('#btnZip').addEventListener('click', exportZip);
       $('#btnVerify').addEventListener('click', openVerifier);
       $('#btnBackup').addEventListener('click', () => exportBackup(false));
@@ -1760,7 +1797,7 @@
     },
     loadAll, renderStats, renderTimeline, renderHandovers, renderObject, renderDeadlines,
     requirePin, showTab, toast, verifyChain, buildEvidencePackage, refreshVersionCard,
-    openModal, closeModal, ensureTerms, refreshTsaInfo, refreshBackupBanner
+    openModal, closeModal, ensureTerms, refreshTsaInfo, refreshBackupBanner, buildReportWithContract, printWithContract
   };
   global.UI = UI;
 })(window);

@@ -400,6 +400,13 @@ class CDP {
   check('в отчёте указано, с какой даты ведутся записи', /Записи ведутся с:/.test(contractInReport || ''));
   check('отмечено, что за ранний период записей нет', /за более ранний период записей нет/.test(contractInReport || ''));
 
+  const combined = await cdp.eval('UI.buildReportWithContract()');
+  check('PDF с договором собирается', /Приложение\. Договор аренды/.test(combined || ''));
+  check('в объединённом PDF есть отчёт', /Журнал аренды/.test(combined || ''));
+  check('страницы договора вставлены картинками', /data:image\/jpeg;base64,/.test(combined || ''));
+  const hasPdfBtn = await cdp.eval('!!document.querySelector("#btnPrintAll")');
+  check('кнопка «Договор + записи (PDF)» есть', hasPdfBtn === true);
+
   console.log('\n════════════════════════');
   console.log('Пройдено: ' + pass + ' · Провалено: ' + fail);
   try { ws.close(); } catch (e) { }

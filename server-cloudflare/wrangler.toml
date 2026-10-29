@@ -1,0 +1,14 @@
+name = "arendalog-sync"
+main = "worker.js"
+compatibility_date = "2026-01-01"
+
+# Хранилище метаданных и событий (ключ-значение).
+# Бесплатно: 1 ГБ, 100 000 чтений и 1 000 записей в сутки.
+[[kv_namespaces]]
+binding = "SPACES"
+id = "ПОДСТАВЬТЕ_ID_ПОСЛЕ_wrangler_kv_namespace_create"
+
+# Вложения (фото, чеки). Бесплатно: 10 ГБ, без платы за исходящий трафик.
+[[r2_buckets]]
+binding = "BLOBS"
+bucket_name = "arendalog-blobs"
